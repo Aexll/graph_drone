@@ -1,7 +1,8 @@
 import numpy as np
 import dearpygui.dearpygui as dpg
 import algograph as ag
-
+from message import Message
+import random
 
 DRONE_RADIUS = 10
 DRONE_SPEED = 200
@@ -57,11 +58,39 @@ class Drone:
         Drone.DRONE_COUNT += 1
         Drone.DRONE_REFERENCE.append(self)
 
+        self.sent_messages = []
+
     def retarget(self):
         """
         Retarget the drone to a random target
         """
         self.target = np.random.rand(2)*800  # Random target within a 800x600 area
+
+
+
+    ## Message handling
+
+    def receive_message(self, message: Message):
+        """
+        Receive a message from another drone
+        """
+        message.gone_to_ids.add(self.id)
+        for n in self.get_neighbors_ids():
+            if n not in message.gone_to_ids:
+                print(f"Sending message to {n}")
+                self.send_message(message.resend_to(n))
+
+        pass
+        
+    def send_message(self, msg: Message):
+        """
+        Send a message to another drone
+        """
+        self.sent_messages.append(msg)
+
+
+
+
 
     def think(self):
         pass
@@ -87,6 +116,24 @@ class Drone:
         dt is the time step
         """
 
+        # Send a message to a random drone
+        if random.random() < 0.001:
+            to_id = random.randint(0, Drone.DRONE_COUNT-1)
+            if to_id != self.id and to_id in self.get_neighbors_ids():
+                self.send_message(Message(self.id, to_id, **{"test": "test"}))
+
+        # update messages
+        for message in self.sent_messages:
+            to_pos = Drone.DRONE_REFERENCE[message.to_id].position
+            from_pos = self.position
+            if np.linalg.norm(to_pos - from_pos) > 0:
+                message.progress += dt * (Message.SPEED / np.linalg.norm(to_pos - from_pos))
+            else:
+                message.progress = 1
+            if message.progress >= 1:
+                Drone.DRONE_REFERENCE[message.to_id].receive_message(message)
+                self.sent_messages.remove(message)
+
         # Move the drone towards the target
         dir = np.linalg.norm(self.target - self.position)
         if dir > 0:
@@ -98,6 +145,9 @@ class Drone:
         if np.linalg.norm(self.target - self.position) < TARGET_RADIUS:
             dir = np.zeros_like(dir)
         self.position += dir * DRONE_SPEED * dt
+
+
+
 
         Drone.GRAPH = None
 
@@ -124,9 +174,10 @@ class Drone:
                 line_start.tolist(), 
                 line_end.tolist(), 
                 color=color, 
-                thickness=4,
+                thickness=2,
                 parent="simulation_drawing"
             )
+        
     
         # Draw drone as circle  
         dpg.draw_circle(
@@ -163,4 +214,6 @@ class Drone:
             parent="simulation_drawing"
         )
 
-
+        for message in self.sent_messages:
+            pos = self.position + (Drone.DRONE_REFERENCE[message.to_id].position - self.position) * message.progress
+            message.draw(pos)

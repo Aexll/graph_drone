@@ -3,6 +3,7 @@ import dearpygui.dearpygui as dpg
 import time
 import algograph as ag
 from drone import Drone
+from message import Message
 
 
 drones = [
@@ -43,7 +44,7 @@ def update():
     # Draw drones
     for drone in drones:
         drone.draw()
-    
+
     tick += 1
 
 
@@ -53,6 +54,8 @@ def update():
 
 def btn_add_drone():
     drones.append(Drone((np.random.rand() * 800, np.random.rand() * 600), (np.random.rand() * 800, np.random.rand() * 600)))
+    Drone.GRAPH = None
+    ag.update_graph(Drone.get_graph())
 
 def btn_retarget():
     for drone in drones:
