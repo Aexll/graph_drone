@@ -131,24 +131,31 @@ class Drone:
 
 
 # Initialize 5 drones in a cycle (pentagon)
-import math
+# import math
 
-CYCLE_RADIUS = 250
-CYCLE_CENTER = (400, 400)
-NUM_DRONES = 5
+# CYCLE_RADIUS = 250
+# CYCLE_CENTER = (400, 400)
+# NUM_DRONES = 5
 
-drones = []
-for i in range(NUM_DRONES):
-    angle = 2 * math.pi * i / NUM_DRONES
-    x = CYCLE_CENTER[0] + CYCLE_RADIUS * math.cos(angle)
-    y = CYCLE_CENTER[1] + CYCLE_RADIUS * math.sin(angle)
-    # Target is the next point in the cycle
-    next_angle = 2 * math.pi * ((i + 1) % NUM_DRONES) / NUM_DRONES
-    tx = CYCLE_CENTER[0] + CYCLE_RADIUS * math.cos(next_angle)
-    ty = CYCLE_CENTER[1] + CYCLE_RADIUS * math.sin(next_angle)
-    drones.append(Drone((x, y), (tx, ty)))
+# drones = []
+# for i in range(NUM_DRONES):
+#     angle = 2 * math.pi * i / NUM_DRONES
+#     x = CYCLE_CENTER[0] + CYCLE_RADIUS * math.cos(angle)
+#     y = CYCLE_CENTER[1] + CYCLE_RADIUS * math.sin(angle)
+#     # Target is the next point in the cycle
+#     next_angle = 2 * math.pi * ((i + 1) % NUM_DRONES) / NUM_DRONES
+#     tx = CYCLE_CENTER[0] + CYCLE_RADIUS * math.cos(next_angle)
+#     ty = CYCLE_CENTER[1] + CYCLE_RADIUS * math.sin(next_angle)
+#     drones.append(Drone((x, y), (tx, ty)))
 
 
+drones = [
+    Drone((100, 100), (200, 200)),
+    Drone((300, 300), (400, 400)),
+    Drone((500, 500), (600, 600)),
+    Drone((700, 700), (800, 800)),
+    Drone((400, 100), (400, 200)),
+]
 
 
 
@@ -212,7 +219,16 @@ def Δ(i,j,l,n):
     returns the distance between drone i and drone j, witout passing by the edge i,l
     """
     v = ω(i, j, n) - ω(j, l, n)
-    return max(min(v,1),-1) 
+    return v
+
+def Δ_array(i,l,n):
+    """
+    returns the distance between drone i and drone j, witout passing by the edge i,l
+    """
+    ret = []
+    for j in range(Drone.DRONE_COUNT):
+        ret.append(Δ(i,j,l,n))
+    return ret
 
 
 
@@ -225,6 +241,8 @@ def is_critical_edge(i,l):
             return False
         for ii in N(i):
             for ll in N(l):
+                if ii == l or ll == i:
+                    continue
                 if Δ(i,j,ii,n + 1) == 1 and Δ(l,j,ll,n + 1) == 1:
                     return False
     # print(i,l,"critical")
@@ -236,15 +254,25 @@ def display_critical_edges(i,l):
         print(i,l,"critical")
     else:
         print(i,l,"not critical")
-        for j in range(n):
-            if Δ(i,j,l,n + 1) == 0:
-                print(f"j = {j} : {Δ(i,j,l,n + 1)}")
-            else: 
-                for ii in N(i):
-                    for ll in N(l):
-                        if Δ(i,j,ii,n + 1) == 1 and Δ(l,j,ll,n + 1) == 1:
-                            print(f"j = {j}, ii = {ii}, ll = {ll} : {Δ(i,j,ii,n + 1)} , {Δ(l,j,ll,n + 1)}")
+        print(f"Δ({i},{l},{n}) = ", Δ_array(i,l,n))
+        for ii in N(i):
+            print(f"Δ({i},{ii},{n}) = ", Δ_array(i,ii,n))
+        for ll in N(l):
+            print(f"Δ({l},{ll},{n}) = ", Δ_array(l,ll,n))
+        print("--------------------------------")
 
+        # for j in range(n):
+        #     if Δ(i,j,l,n+1) == 0:
+        #         print(f"j = {j} : {Δ(i,j,l,n+1)}")
+        #     else: 
+        #         for ii in N(i):
+        #             for ll in N(l):
+        #                 if Δ(i,j,ii,n+1) == 1 and Δ(l,j,ll,n+1) == 1:
+        #                     print(f"j = {j}, ii = {ii}, ll = {ll} : {Δ(i,j,ii,n+1)} , {Δ(l,j,ll,n+1)}")
+
+
+def display_delta_array(i,l,n):
+    print(Δ_array(i,l,n))
 
 ########################
 #### DISPLAY TABLES ####
@@ -344,6 +372,19 @@ def recreate_omega_table():
 
 
 
+def neighbors_table():
+    with dpg.table(header_row=True, tag="neighbors_table"):
+        dpg.add_table_column(label="i")
+        for j in range(Drone.DRONE_COUNT):
+            dpg.add_table_column(label=f"")
+        
+        for i in range(Drone.DRONE_COUNT):
+            with dpg.table_row():
+                dpg.add_text(f"{i} :" )
+                for j in range(Drone.DRONE_COUNT):
+                    if j in N(i):
+                        dpg.add_text(f"{j}", tag=f"neighbors_cell_{i}_{j}")
+
 
 # Global variables
 TICK_ENABLED = False
@@ -426,6 +467,8 @@ def main():
                 create_xi_table()
             with dpg.tab(label="ω(i,j) Table", tag="omega_tab"):
                 create_omega_table()
+            with dpg.tab(label="Neighbors Table", tag="neighbors_tab"):
+                neighbors_table()
     
     
     # Set up keyboard handler
@@ -448,7 +491,7 @@ def main():
         update_omega_table()
         dpg.render_dearpygui_frame()
         time.sleep(1/60)  # 60 FPS
-        display_critical_edges(0,4)
+        display_critical_edges(1,2)
     
     dpg.destroy_context()
 
