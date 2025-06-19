@@ -104,59 +104,63 @@ def Δ(i,j,l,n):
     """
     returns the distance between drone i and drone j, witout passing by the edge i,l
     """
-    return 0
+    return Δ_array(i,l,n)[j]
 
 def Δ_array(i,l,n):
     """
     returns the distance between drone i and drone j, witout passing by the edge i,l
     """
-    return 0
+    return ω_array(i,n) - ω_array(l,n)
 
 def is_critical_edge(i,l):
     """
     returns True if the edge i,l is critical, False otherwise
     """
-    return False
 
-print("xi_array")
-for i in range(GRAPH_COUNT):
-    print(xi_array(i, GRAPH_COUNT))
+    if 0 in Δ_array(i,l,GRAPH_COUNT+1):
+        return False
 
-print("ω_array")
-for i in range(GRAPH_COUNT):
-    print(ω_array(i, GRAPH_COUNT))
-
+    for ii in N(i):
+        for ll in N(l):
+            if ii == l or ll == i:
+                continue
+            if 2 in Δ_array(i,ii,GRAPH_COUNT+1) + Δ_array(l,ll,GRAPH_COUNT+1):
+                return False
+    return True
 
 
 
 ## DRAWING ##
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    import networkx as nx
 
+    def draw_graph():
+        """
+        Draws the current graph using matplotlib and networkx.
+        Assumes GRAPH is a numpy adjacency matrix.
+        """
+        if 'GRAPH' not in globals() or GRAPH is None:
+            print("GRAPH is not defined.")
+            return
 
-import matplotlib.pyplot as plt
-import networkx as nx
+        G = nx.Graph()
+        n = GRAPH.shape[0]
+        for i in range(n):
+            G.add_node(i)
+        for i in range(n):
+            for j in range(i+1, n):
+                if GRAPH[i, j] == 1 or GRAPH[j, i] == 1:
+                    G.add_edge(i, j)
+                    if is_critical_edge(i, j):
+                        print(f"Edge {i} {j} is critical")
+                    else:
+                        print(f"Edge {i} {j} is not critical")
 
-def draw_graph():
-    """
-    Draws the current graph using matplotlib and networkx.
-    Assumes GRAPH is a numpy adjacency matrix.
-    """
-    if 'GRAPH' not in globals() or GRAPH is None:
-        print("GRAPH is not defined.")
-        return
+        pos = nx.spring_layout(G)
+        nx.draw(G, pos, with_labels=True, node_color='skyblue', node_size=700, edge_color='gray')
+        plt.title("Graph Visualization")
+        plt.show()
 
-    G = nx.Graph()
-    n = GRAPH.shape[0]
-    for i in range(n):
-        G.add_node(i)
-    for i in range(n):
-        for j in range(i+1, n):
-            if GRAPH[i, j] == 1 or GRAPH[j, i] == 1:
-                G.add_edge(i, j)
-
-    pos = nx.spring_layout(G)
-    nx.draw(G, pos, with_labels=True, node_color='skyblue', node_size=700, edge_color='gray')
-    plt.title("Graph Visualization")
-    plt.show()
-
-# Example usage:
-draw_graph()
+    # Example usage:
+    draw_graph()

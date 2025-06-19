@@ -73,12 +73,12 @@ class Drone:
         """
         return np.where(Drone.get_graph()[self.id] == 1)[0]
 
-    def get_neighbors_references(self) -> set:
+    def get_neighbors_references(self) -> list:
         """
         Returns the list of neighbors of the drone
         (using get_graph)
         """
-        return set(np.where(Drone.get_graph()[self.id] == 1)[0])
+        return [Drone.DRONE_REFERENCE[i] for i in self.get_neighbors_ids()]
 
 
     def update(self, dt):
@@ -87,10 +87,7 @@ class Drone:
         dt is the time step
         """
 
-        self._neighbors = None  # Reset neighbors to force recalculation next time
-        # /!\ if another drone has been updated, neighbors may have changed
-        # all drones should be updated in the same tick. no get_neighbors call should be made between updates
-
+        # Move the drone towards the target
         dir = np.linalg.norm(self.target - self.position)
         if dir > 0:
             dir = (self.target - self.position) / dir
@@ -102,7 +99,6 @@ class Drone:
             dir = np.zeros_like(dir)
         self.position += dir * DRONE_SPEED * dt
 
-        # reset the graph to force recalculation next time
         Drone.GRAPH = None
 
     def draw(self):
