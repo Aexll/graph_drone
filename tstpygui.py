@@ -86,46 +86,13 @@ class Drone:
             else:
                 color = [255, 255, 255, 255]
 
-            line_tag = f"edge_{self.id}_{neighbor.id}"
             dpg.draw_line(
                 line_start.tolist(), 
                 line_end.tolist(), 
                 color=color, 
                 thickness=4,
-                parent="simulation_drawing",
-                tag=line_tag
+                parent="simulation_drawing"
             )
-
-            # Calculate a rectangle around the line for click area
-            # Make the rectangle a bit wider for easier clicking
-            rect_width = 10  # pixels
-
-            # Calculate perpendicular vector
-            dx, dy = line_end - line_start
-            length = np.linalg.norm([dx, dy])
-            if length == 0:
-                perp = np.array([0, 0])
-            else:
-                perp = np.array([-dy, dx]) / length * rect_width
-
-            p1 = line_start + perp
-            p2 = line_end + perp
-            p3 = line_end - perp
-            p4 = line_start - perp
-
-            # Overlay a transparent polygon for click detection
-            click_tag = f"edge_click_{self.id}_{neighbor.id}"
-            dpg.draw_polygon(
-                [p1.tolist(), p2.tolist(), p3.tolist(), p4.tolist()],
-                color=[0,0,0,0],  # invisible border
-                fill=[0,0,0,10],  # almost invisible fill, but clickable
-                parent="simulation_drawing",
-                tag=click_tag,
-                thickness=0
-            )
-            def make_callback(i, l):
-                return lambda s, a: display_critical_edges(i, l)
-            dpg.set_item_callback(click_tag, make_callback(self.id, neighbor.id))
     
         # Draw drone as circle  
         dpg.draw_circle(
@@ -481,7 +448,7 @@ def main():
         update_omega_table()
         dpg.render_dearpygui_frame()
         time.sleep(1/60)  # 60 FPS
-        # display_critical_edges(0,4)
+        display_critical_edges(0,4)
     
     dpg.destroy_context()
 
