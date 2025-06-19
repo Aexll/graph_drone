@@ -4,22 +4,6 @@ import time
 import algograph as ag
 from drone import Drone
 
-DRONE_RADIUS = 10
-DRONE_SPEED = 200
-CONEXION_RADIUS = 400
-TARGET_RADIUS = 5
-FREE_TICKS = 2 # Every N ticks, the drones will update they omega and xi values
-
-
-
-
-
-"""
-Note: when a variable start with an underscore it means that the drone is not aware of it, 
-it is just for drawing purposes, the drone will not use it to make decisions.
-"""
-
-
 
 drones = [
     Drone((100, 100), (200, 200)),
@@ -29,24 +13,11 @@ drones = [
     Drone((400, 100), (400, 200)),
 ]
 
-
-
-drones.append(Drone((100, 100), (200, 200)))
-print(Drone.get_graph())
-
-
-
-
 ag.update_graph(Drone.get_graph())
-
-
-
-
 
 # Global variables
 TICK_ENABLED = False
 tick = 0
-running = True
 
 
 def update():
@@ -69,10 +40,7 @@ def update():
         for drone in drones:
             drone.update(0.016)
 
-    # Clear memory for optimized functions
-    # if tick % FREE_TICKS == 0:
-    #     clear_memory()    
-
+    # Draw drones
     for drone in drones:
         drone.draw()
     
@@ -85,11 +53,6 @@ def update():
 
 def btn_add_drone():
     drones.append(Drone((np.random.rand() * 800, np.random.rand() * 600), (np.random.rand() * 800, np.random.rand() * 600)))
-    # Recreate tables to accommodate new drone
-    # recreate_xi_table()
-    # recreate_omega_table()
-    # Clear memory cache since drone count changed
-    # clear_memory()
 
 def btn_retarget():
     for drone in drones:
@@ -98,9 +61,7 @@ def btn_retarget():
 def btn_toggle_tick():
     global TICK_ENABLED
     TICK_ENABLED = not TICK_ENABLED
-    print(f"TICK_ENABLED set to {TICK_ENABLED}")
-
-
+    # print(f"TICK_ENABLED set to {TICK_ENABLED}")
 
 
 def main():

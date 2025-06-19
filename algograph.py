@@ -3,12 +3,9 @@ import numpy as np
 INF = 100000000
 
 GRAPH: np.ndarray = np.array([
-    [0, 1, 0, 0, 1, 0],
-    [1, 0, 1, 0, 1, 0],
-    [0, 1, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 1],
-    [1, 1, 0, 0, 0, 1],
-    [0, 0, 0, 1, 1, 0]
+    [0, 1, 0],
+    [1, 0, 0],
+    [0, 0, 0],
 ])
 GRAPH_COUNT: int = len(GRAPH)
 
@@ -19,6 +16,14 @@ def update_graph(g: np.ndarray):
     GRAPH_COUNT = len(g)
     xi_memory.clear()
     omega_memory.clear()
+
+
+
+
+
+
+
+
 
 def N(i):
     """
@@ -117,7 +122,8 @@ def is_critical_edge(i,l):
     returns True if the edge i,l is critical, False otherwise
     """
 
-    if 0 in Δ_array(i,l,GRAPH_COUNT+1):
+    # we substract 1-xi_array(i,GRAPH_COUNT+1) to avoid problemes when no conexions are possible
+    if 0 in Δ_array(i,l,GRAPH_COUNT+1) - (1-xi_array(i,GRAPH_COUNT+1)) :
         return False
 
     for ii in N(i):
@@ -127,6 +133,9 @@ def is_critical_edge(i,l):
             if 2 in Δ_array(i,ii,GRAPH_COUNT+1) + Δ_array(l,ll,GRAPH_COUNT+1):
                 return False
     return True
+
+
+
 
 
 
@@ -162,5 +171,4 @@ if __name__ == "__main__":
         plt.title("Graph Visualization")
         plt.show()
 
-    # Example usage:
     draw_graph()
