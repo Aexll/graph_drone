@@ -1,7 +1,7 @@
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-from errorcalc import calculate_error_graph, calculate_graph_connectivity, error_linear, error_square
+from errorcalc import calculate_error_graph, calculate_graph_connectivity, er_lin, er_sq, er_max
 from visual import create_graph_visualizer
 
 
@@ -35,7 +35,7 @@ class GraphEnv(gym.Env):
         self.nodes += action
         # clip les positions pour rester dans une zone raisonnable
         self.nodes = np.clip(self.nodes, 0, 600)
-        error = calculate_error_graph(self.nodes, self.targets, error_linear)
+        error = calculate_error_graph(self.nodes, self.targets, er_sq)
         connectivity = calculate_graph_connectivity(self.nodes, self.dist_threshold)
         reward = -error
         if connectivity < 1:

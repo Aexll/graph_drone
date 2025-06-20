@@ -1,34 +1,26 @@
 import numpy as np
 
-def error_linear(node_pos, target_pos):
-    """
-    distance between node and target
-    """
-    return np.linalg.norm(node_pos - target_pos)
-
-def error_square(node_pos, target_pos):
-    """
-    sum of all squared distances between nodes and targets
-    """
-    return np.sum((node_pos - target_pos)**2)
-
 def er_sq(nodes, targets):
     """
     sum of all squared distances between nodes and targets sqrted
     """
-    return np.sum((nodes - targets)**2)**0.5
+    return np.sum(np.linalg.norm(nodes - targets, axis=1)**2)**0.5
 
 def er_lin(nodes, targets):
     """
-    sum of all distances between nodes and targets
+    return euclidean distance between nodes and targets
     """
-    return np.sum(np.linalg.norm(nodes - targets, 1))
+    return np.average(np.linalg.norm(nodes - targets, axis=1))
+
+def er_max(nodes, targets):
+    """
+    max of all distances between nodes and targets
+    """
+    return np.max(np.linalg.norm(nodes - targets, axis=1))
+
 
 def calculate_error_graph(nodes, targets, error_function):
-    error = 0
-    for i in range(len(nodes)):
-        error += error_function(nodes[i], targets[i])
-    return error
+    return error_function(nodes, targets)
 
 def calculate_graph_connectivity(nodes,dist_threshold):
     connected_memory.clear()
@@ -70,7 +62,15 @@ def connected(i,n,graph):
 
 if __name__ == "__main__":
     nodes = np.array([[0,0],[1,0],[0,1],[1,1]])
+    targets = np.array([[0,0],[3,0],[0,3],[3,4]])
     dist_threshold = 1.1
+    print("nodes", nodes)
+    print("targets", targets)
+    print("distances", np.linalg.norm(nodes - targets, axis=1))
+    print("average distance", np.average(np.linalg.norm(nodes - targets, axis=1)))
+    print("er_sq", er_sq(nodes, targets))
+    print("er_lin", er_lin(nodes, targets))
+    print("er_max", er_max(nodes, targets))
     print(nodes_to_matrix(nodes, dist_threshold))
     print(get_neighbors(0, nodes_to_matrix(nodes, dist_threshold)))
     print(connected(0, 4, nodes_to_matrix(nodes, dist_threshold)))

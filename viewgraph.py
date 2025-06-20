@@ -2,10 +2,13 @@ import dearpygui.dearpygui as dpg
 import math
 import random
 import numpy as np
-from errorcalc import calculate_error_graph, calculate_graph_connectivity, error_linear, error_square, er_lin, er_sq
+from errorcalc import calculate_graph_connectivity, er_lin, er_sq, er_max
 from learning import optimize_nodes, make_error_function, mutate_nodes
-from renforcement import GraphEnv
-from stable_baselines3 import PPO
+
+WINDOW_WIDTH = 1400
+WINDOW_HEIGHT = 800
+WINDOW_INFO_WH = (400, 800)
+WINDOW_GRAPH_WH = (1000, 800)
 
 # Example set of coordinates (x, y)
 coordinates:np.ndarray = np.array([
@@ -30,10 +33,11 @@ target_coordinates:np.ndarray = np.array([
 history = []
 
 def randomize_targets():
+    offset = 100
     global target_coordinates
     target_coordinates = np.array([
-        [random.randint(0, 900), random.randint(0, 900)]
-        for _ in range(6)
+        [random.randint(offset, WINDOW_GRAPH_WH[1]-offset), random.randint(offset, WINDOW_GRAPH_WH[1]-offset)]
+        for _ in range(len(coordinates))
     ])
     draw_graph(None, None)
 
@@ -78,23 +82,30 @@ def distance(p1, p2):
 
 def draw_graph(sender, app_data):
     dpg.delete_item("graph_draw", children_only=True)
+
+    barycenter_targets = np.mean(target_coordinates, axis=0)
+    barycenter_nodes = np.mean(coordinates, axis=0)
+
     # Draw links
     for i, p1 in enumerate(coordinates):
         for j, p2 in enumerate(coordinates):
             if i < j and distance(p1, p2) <= DIST_THRESHOLD:
                 dpg.draw_line(tuple(p1), tuple(p2), color=(150, 150, 255, 255), thickness=2, parent="graph_draw")
     
-
-    barycenter = np.mean(target_coordinates, axis=0)
-
+    # Draw ray from barycenter to targets
     if SHOW_RAYS:
-        # Draw ray from barycenter to targets
         for i, p1 in enumerate(target_coordinates):
-            d = np.linalg.norm(barycenter - target_coordinates[i])
-            dpg.draw_line((float(barycenter[0]), float(barycenter[1])), (float(target_coordinates[i][0]), float(target_coordinates[i][1])), color=(150, 150, 255, 255), thickness=2, parent="graph_draw")
+            d = np.linalg.norm(barycenter_targets - target_coordinates[i]) * 0.5
+            dpg.draw_line((float(barycenter_targets[0]), float(barycenter_targets[1])), (float(target_coordinates[i][0]), float(target_coordinates[i][1])), color=(150, 150, 255, 255), thickness=2, parent="graph_draw")
 
-
-    
+    # Draw links between nodes and targets (dotted lines)
+    if SHOW_TARGET_LINES:
+        for i, p1 in enumerate(coordinates):
+            for j, p2 in enumerate(target_coordinates):
+                if i==j:
+                    d = distance(p1, p2)
+                    cd = 255-max(min(d/2, 255),0)
+                    draw_dotted_line(tuple(p1), tuple(p2), color=(150, 150, 255, cd), thickness=2, parent="graph_draw")
 
     # Draw nodes
     for idx, (x, y) in enumerate(coordinates):
@@ -106,29 +117,13 @@ def draw_graph(sender, app_data):
         dpg.draw_circle((float(x), float(y)), NODE_RADIUS, color=(0, 0, 0, 255), fill=(255, 100, 50, 255), parent="graph_draw")
         dpg.draw_text((float(x) - 4, float(y) - 8), f"{idx}", size=15, color=(0,0,0,255), parent="graph_draw")
 
-    if SHOW_TARGET_LINES:
-    # Draw links between nodes and targets (dotted lines)
-        for i, p1 in enumerate(coordinates):
-            for j, p2 in enumerate(target_coordinates):
-                if i==j:
-                    d = distance(p1, p2)
-                    cd = 255-max(min(d/2, 255),0)
-                    draw_dotted_line(tuple(p1), tuple(p2), color=(150, 150, 255, cd), thickness=2, parent="graph_draw")
-
     # Draw barycenter of targets
-    dpg.draw_circle((float(barycenter[0]), float(barycenter[1])), NODE_RADIUS/2, color=(0, 0, 0, 255), fill=(255, 100, 50, 255), parent="graph_draw")
-    dpg.draw_text((float(barycenter[0]) - 4, float(barycenter[1]) - 8), "", size=15, color=(0,0,0,255), parent="graph_draw")
+    dpg.draw_circle((float(barycenter_targets[0]), float(barycenter_targets[1])), NODE_RADIUS/2, color=(0, 0, 0, 255), fill=(255, 100, 50, 255), parent="graph_draw")
+    dpg.draw_text((float(barycenter_targets[0]) - 4, float(barycenter_targets[1]) - 8), "", size=15, color=(0,0,0,255), parent="graph_draw")
 
     # Draw barycenter of nodes
-    barycenter = np.mean(coordinates, axis=0)
-    dpg.draw_circle((float(barycenter[0]), float(barycenter[1])), NODE_RADIUS/2, color=(0, 0, 0, 255), fill=(100, 200, 255, 255), parent="graph_draw")
-    dpg.draw_text((float(barycenter[0]) - 4, float(barycenter[1]) - 8), "", size=15, color=(0,0,0,255), parent="graph_draw")
-
-    # Draw history as a line from the first to the last point
-    for i in range(len(history) - 1):
-        p1 = history[i]
-        p2 = history[i + 1]
-        dpg.draw_line((float(p1[0]), float(p1[1])), (float(p2[0]), float(p2[1])), color=(0, 0, 255, 100), thickness=2, parent="graph_draw")
+    dpg.draw_circle((float(barycenter_nodes[0]), float(barycenter_nodes[1])), NODE_RADIUS/2, color=(0, 0, 0, 255), fill=(100, 200, 255, 255), parent="graph_draw")
+    dpg.draw_text((float(barycenter_nodes[0]) - 4, float(barycenter_nodes[1]) - 8), "", size=15, color=(0,0,0,255), parent="graph_draw")
 
     update_error(None, None)
 
@@ -159,100 +154,96 @@ def mouse_handler(sender, app_data):
 
 
 def update_dist_threshold(sender, app_data):
-            global DIST_THRESHOLD
-            try:
-                DIST_THRESHOLD = float(app_data)
-            except ValueError:
-                pass
-            draw_graph(None, None)
-
-ERROR_FUNCTION = error_linear
+    global DIST_THRESHOLD
+    try:
+        DIST_THRESHOLD = float(app_data)
+    except ValueError:
+        pass
+    draw_graph(None, None)
 
 def update_error(sender, app_data):
-    dpg.set_value("error_text", "Error Linear: " + str(er_lin(coordinates, target_coordinates)))
+    dpg.set_value("error_linear_text", "Error Linear: " + str(er_lin(coordinates, target_coordinates)))
     dpg.set_value("error_square_text", "Error Square: " + str(er_sq(coordinates, target_coordinates)))
+    dpg.set_value("error_max_text", "Error Max: " + str(er_max(coordinates, target_coordinates)))
     dpg.set_value("connectivity_text", "Connectivity: " + str(calculate_graph_connectivity(coordinates, DIST_THRESHOLD)))
 
 def optimize_nodes_callback(sender, app_data):
     global coordinates
-    best_nodes = optimize_nodes(coordinates, target_coordinates, make_error_function(DIST_THRESHOLD, ERROR_FUNCTION ))
+    best_nodes = optimize_nodes(coordinates, target_coordinates, make_error_function(DIST_THRESHOLD, error_function))
     coordinates = best_nodes
     draw_graph(None, None)
     update_error(None, None)
 
 def mutate_nodes_callback(sender, app_data):
     global coordinates
-    coordinates, hist = mutate_nodes(coordinates, target_coordinates, make_error_function(DIST_THRESHOLD, ERROR_FUNCTION ))
+    coordinates, hist = mutate_nodes(coordinates, target_coordinates, make_error_function(DIST_THRESHOLD, error_function))
     history.extend(hist)
+    draw_graph(None, None)
+    update_error(None, None)
+
+def auto_mutate_callback(sender, app_data):
+    if dpg.get_value("auto_mutate_checkbox"):
+        global coordinates
+        coordinates, hist = mutate_nodes(coordinates, target_coordinates, make_error_function(DIST_THRESHOLD, error_function), n_mutations=10)
+        history.extend(hist)
+        draw_graph(None, None)
+        update_error(None, None)
+        dpg.set_frame_callback(dpg.get_frame_count() + int(0.1 / dpg.get_delta_time()), auto_mutate_callback)
+
+
+error_function = er_sq
+def update_error_function(sender, app_data):
+    global error_function
+    print(app_data)
+    functions = {
+        "Linear": er_lin,
+        "Square": er_sq,
+        "Max": er_max
+    }
+    error_function = make_error_function(DIST_THRESHOLD, functions[app_data])
     draw_graph(None, None)
     update_error(None, None)
 
 def main():
     dpg.create_context()
-    dpg.create_viewport(title='Graph Visualizer', width=1400, height=800)
+    dpg.create_viewport(title='Graph Visualizer', width=WINDOW_WIDTH, height=WINDOW_HEIGHT)
 
-    with dpg.window(label="Graph", width=1000, height=800):
-        dpg.add_drawlist(width=1000, height=800, tag="graph_draw")
+    with dpg.window(label="Graph", width=WINDOW_GRAPH_WH[0], height=WINDOW_GRAPH_WH[1]):
+        dpg.add_drawlist(width=WINDOW_GRAPH_WH[0], height=WINDOW_GRAPH_WH[1], tag="graph_draw")
         with dpg.handler_registry():
             dpg.add_mouse_move_handler(callback=mouse_handler)
             dpg.add_mouse_click_handler(callback=mouse_handler)
             dpg.add_mouse_drag_handler(callback=mouse_handler)
             dpg.add_mouse_release_handler(callback=mouse_handler)
 
-    with dpg.window(label="Info", width=400, height=800, pos=[1000, 0]):
+    with dpg.window(label="Info", width=WINDOW_INFO_WH[0], height=WINDOW_INFO_WH[1], pos=[WINDOW_GRAPH_WH[0], 0]):
         dpg.add_text("Options")
         dpg.add_separator()
-        dpg.add_button(label="Redraw Graph", callback=draw_graph)
         dpg.add_button(label="Randomize Targets", callback=randomize_targets)
         dpg.add_input_text(label="Distance Threshold",default_value=str(DIST_THRESHOLD),callback=update_dist_threshold)
-        dpg.add_text(label="Error",tag="error_text", parent="Info")
+        dpg.add_text(label="Error Linear",tag="error_linear_text", parent="Info")
         dpg.add_text(label="Error Square",tag="error_square_text", parent="Info")
+        dpg.add_text(label="Error Max",tag="error_max_text", parent="Info")
         dpg.add_text(label="Connectivity",tag="connectivity_text", parent="Info")
-        dpg.add_button(label="Optimize",callback=optimize_nodes_callback)
         dpg.add_button(label="Mutate",callback=mutate_nodes_callback)
-        dpg.add_checkbox(label="Autostep", tag="autostep_checkbox", default_value=False)
 
-        dpg.add_button(label="Step", callback=step_env)
+        dpg.add_combo(
+            label="Error Function",
+            items=["Linear", "Square", "Max"],
+            default_value="Square",
+            tag="error_function_combo",
+            callback=update_error_function
+        )
 
-        # Timer for autostep
-        def autostep_callback():
-            if dpg.get_value("autostep_checkbox"):
-                step_env()
-                dpg.set_frame_callback(dpg.get_frame_count() + int(0.1 / dpg.get_delta_time()), autostep_callback)
+        # toggle mutation
+        dpg.add_checkbox(label="Auto Mutate", tag="auto_mutate_checkbox", default_value=False)
+        dpg.set_item_callback("auto_mutate_checkbox", auto_mutate_callback)
 
-        def autostep_toggle(sender, app_data):
-            if app_data:
-                dpg.set_frame_callback(dpg.get_frame_count() + int(0.1 / dpg.get_delta_time()), autostep_callback)
-
-        dpg.set_item_callback("autostep_checkbox", autostep_toggle)
-        
-
-    
     draw_graph(None, None)
     dpg.setup_dearpygui()
     dpg.show_viewport()
     dpg.start_dearpygui()
     dpg.destroy_context()
-
-
-current_env = GraphEnv(n_nodes=len(coordinates), dist_threshold=int(DIST_THRESHOLD), nodes=coordinates, targets=target_coordinates)
-model = PPO.load("ppo_graph_env")
-def make_env():
-    global current_env
-    current_env = GraphEnv(n_nodes=len(coordinates), dist_threshold=int(DIST_THRESHOLD), nodes=coordinates, targets=target_coordinates)
-    return current_env
-
-def step_env():
-    global current_env, coordinates
-    action, _ = model.predict(current_env._get_obs())
-    # action = current_env.action_space.sample()
-    obs, reward, terminated, truncated, info = current_env.step(action)
-    coordinates = current_env.nodes
-    draw_graph(None, None)
-    update_error(None, None)
-    return obs, reward, terminated, truncated, info
-    
-
 
 if __name__ == "__main__":
     main()

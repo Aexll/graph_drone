@@ -1,7 +1,7 @@
 # using reinforcement learning to learn the graph connectivity
 # 
 import numpy as np
-from errorcalc import calculate_error_graph, calculate_graph_connectivity, error_square
+from errorcalc import calculate_error_graph, calculate_graph_connectivity, er_sq
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
@@ -46,7 +46,9 @@ def mutate_nodes(nodes, targets, error_function, n_mutations=1000):
             history.append(nodes.copy())
         else:
             nodes = nodes - random
+    
         # print(f"Error: {error}, New Error: {new_error}")
+    nodes = np.array(nodes)
     return nodes, history
 
 
@@ -59,7 +61,7 @@ if __name__ == "__main__":
     def error_function(nodes, targets):
         connectivity = calculate_graph_connectivity(nodes, DIST_THRESHOLD)
         penalty = (1 - connectivity) ** 2 * a_lot  # p=2 ici
-        return calculate_error_graph(nodes, targets, error_square) + penalty
+        return calculate_error_graph(nodes, targets, er_sq) + penalty
 
 
 
