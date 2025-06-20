@@ -76,23 +76,24 @@ def main():
         dpg.add_button(label="Toggle Movement", callback=btn_toggle_tick)
         dpg.add_button(label="Add Drone", callback=btn_add_drone)
         dpg.add_button(label="Retarget", callback=btn_retarget)
+        dpg.add_button(label="Retarget", callback=btn_retarget)
         
         # Create drawing area
         with dpg.drawlist(width=800, height=800, tag="simulation_drawing"):
             pass
  
     # Create tabbed interface for tables
-    # with dpg.window(label="Drone Tables", tag="tables_window", pos=[820, 0]):
-    #     with dpg.tab_bar():
-    #         with dpg.tab(label="ξ(i,j) Table", tag="xi_tab"):
-    #             # create_xi_table()
-    #             pass
-    #         with dpg.tab(label="ω(i,j) Table", tag="omega_tab"):
-    #             # create_omega_table()
-    #             pass
-    #         with dpg.tab(label="Neighbors Table", tag="neighbors_tab"):
-    #             # neighbors_table()
-    #             pass
+    with dpg.window(label="Drone Tables", tag="tables_window", pos=[820, 0]):
+        with dpg.tab_bar():
+            with dpg.tab(label="ξ(i,j) Table", tag="xi_tab"):
+                # create_xi_table()
+                pass
+            with dpg.tab(label="ω(i,j) Table", tag="omega_tab"):
+                # create_omega_table()
+                pass
+            with dpg.tab(label="Neighbors Table", tag="neighbors_tab"):
+                # neighbors_table()
+                pass
     
     
     # Set up keyboard handler

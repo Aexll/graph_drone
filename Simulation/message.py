@@ -11,23 +11,13 @@ class Message:
 
     SPEED = 800
 
-    def __init__(self, from_id, to_id, **kwargs):
+    def __init__(self, from_id, to_id, name,**kwargs):
         self.from_id = from_id
         self.to_id = to_id
-        self.gone_to_ids = {to_id}
         self.kwargs = kwargs
         self.progress = 0
 
-    def duplicate(self):
-        m = Message(self.from_id, self.to_id, **self.kwargs)
-        m.gone_to_ids = self.gone_to_ids.copy()
-        return m
     
-    def resend_to(self, to_id):
-        m = self.duplicate()
-        m.to_id = to_id
-        return m
-
     def __str__(self):
         return f"Message from drone {self.from_id} to drone {self.to_id} with {self.kwargs}"
 

@@ -9,8 +9,10 @@ DRONE_SPEED = 200
 CONEXION_RADIUS = 400
 TARGET_RADIUS = 5
 FREE_TICKS = 2 # Every N ticks, the drones will update they omega and xi values
+INF = 1000000000
 
 
+OMEGA_UPDATE_TICK = 10
 
 
 
@@ -35,9 +37,7 @@ class Drone:
         if Drone.GRAPH is not None:
             return Drone.GRAPH
         
-        # if the graph is not computed, compute it        
         positions = np.array([drone.position for drone in Drone.DRONE_REFERENCE])
-        # we compute the distance between all drones using numpy for efficiency
         diff = positions[:, np.newaxis, :] - positions[np.newaxis, :, :]
         dists = np.linalg.norm(diff, axis=2)
         # we exclude self-connections
@@ -47,7 +47,11 @@ class Drone:
         Drone.GRAPH = ret
         return ret
 
-
+    @staticmethod
+    def omega_zero(id):
+        ret = np.ones(Drone.DRONE_COUNT) * INF
+        ret[id] = 0
+        return ret
 
 
     def __init__(self, position, target):
@@ -55,6 +59,12 @@ class Drone:
         self.target = np.array(target, dtype=float)
         self._neighbors = None
         self.id = Drone.DRONE_COUNT
+        self.ticks = 0 # internal ticks counter
+
+        # Omega is a list of every drone distances to the drone
+        self.stored_omega = np.ones(Drone.DRONE_COUNT) * INF
+        self.stored_omega_range = 0
+
         Drone.DRONE_COUNT += 1
         Drone.DRONE_REFERENCE.append(self)
 
@@ -74,12 +84,6 @@ class Drone:
         """
         Receive a message from another drone
         """
-        message.gone_to_ids.add(self.id)
-        for n in self.get_neighbors_ids():
-            if n not in message.gone_to_ids:
-                print(f"Sending message to {n}")
-                self.send_message(message.resend_to(n))
-
         pass
         
     def send_message(self, msg: Message):
@@ -88,12 +92,45 @@ class Drone:
         """
         self.sent_messages.append(msg)
 
+    def receive_omega(self, new_omega: np.ndarray, n: int):
+        """
+        Receive an omega message from another drone
+        we update our stored_omega with the message
+        """
+        # Initialize stored_omega if it is not initialized
+        if self.stored_omega.size != Drone.DRONE_COUNT:
+            self.stored_omega = Drone.omega_zero(self.id)
+            self.stored_omega_range = 0
 
+        self.stored_omega = np.minimum(self.stored_omega, new_omega+1)
+        self.stored_omega_range = max(self.stored_omega_range, n+1)
+
+        if self.stored_omega_range < Drone.DRONE_COUNT:
+            for d in self.get_neighbors_ids():
+                self.send_omega(d)
+
+
+
+    def send_omega(self,target):
+        """
+        Send an omega message to another drone
+        """
+        Drone.DRONE_REFERENCE[target].receive_omega(self.stored_omega, self.stored_omega_range)
 
 
 
     def think(self):
-        pass
+
+        # Initialize stored_omega if it is not initialized
+        if self.stored_omega.size == 0:
+            self.stored_omega = Drone.omega_zero(self.id)
+            self.stored_omega_range = 0
+
+        # Send omega to neighbors every OMEGA_UPDATE_TICK ticks
+        if self.ticks % OMEGA_UPDATE_TICK == 0:
+            for neighbor in self.get_neighbors_ids():
+                self.send_omega(neighbor)
+        self.ticks += 1
 
     def get_neighbors_ids(self) -> np.ndarray:
         """
@@ -117,10 +154,10 @@ class Drone:
         """
 
         # Send a message to a random drone
-        if random.random() < 0.001:
-            to_id = random.randint(0, Drone.DRONE_COUNT-1)
-            if to_id != self.id and to_id in self.get_neighbors_ids():
-                self.send_message(Message(self.id, to_id, **{"test": "test"}))
+        # if random.random() < 0.001:
+        #     to_id = random.randint(0, Drone.DRONE_COUNT-1)
+        #     if to_id != self.id and to_id in self.get_neighbors_ids():
+        #         self.send_message(Message(self.id, to_id, **{"test": "test"}))
 
         # update messages
         for message in self.sent_messages:
@@ -217,3 +254,13 @@ class Drone:
         for message in self.sent_messages:
             pos = self.position + (Drone.DRONE_REFERENCE[message.to_id].position - self.position) * message.progress
             message.draw(pos)
+
+
+        # Draw stored_omega next to the drone
+        dpg.draw_text(
+            [self.position[0] - 20, self.position[1] - 20], 
+            str(self.stored_omega), 
+            color=[255, 255, 255, 255], 
+            size=16,
+            parent="simulation_drawing"
+        )
