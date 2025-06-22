@@ -1,0 +1,352 @@
+\documentclass[12pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{float}
+
+% Configuration de la page
+\geometry{margin=2.5cm}
+
+% Informations du document
+\title{Etude de graphe connexe le plus proche d'un ensemble de points}
+\author{Axel Lavigne}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+% \section{Introduction}
+
+\textit{Entracte : 
+    Un graphe est un ensemble de points (appelés sommets) et de segments (appelés arêtes) reliant ces points. 
+    Un graphe est dit connexe si, pour chaque paire de sommets, il existe un chemin reliant ces deux sommets. 
+    Le graphe connexe le plus proche d'un ensemble de points est le graphe qui minimise la distance totale des arêtes tout en restant connexe.
+    Nous verrons plus tard ce que signifie "plus proche" dans ce contexte.
+    L'objectif de cette étude est de développer un algorithme pour trouver le graphe connexe le plus proche d'un ensemble de points dans un plan.
+    Le but de cette etude est de pouvoir appliquer cet algorithme à des drones pour qu'ils puissent se déplacer de manière optimale entre des points donnés, 
+    en minimisant la distance totale parcourue tout en restant connectés.
+}
+
+
+\section{Notation et définitions}
+
+\subsection{graphe et points}
+
+
+Le plan est un espace de dimension finie que l'on notera \( \mathbb{R}^k \). 
+
+Nous noterons les points par 
+
+\begin{equation*}
+    \mathcal{P}  = \{ p_1, p_2, \ldots, p_n \}
+\end{equation*}
+
+\( p_i \) est un point dans le plan et $n$ est le nombre de points dans le plan.
+
+Un graphe $\mathcal{G}$ est un ensemble de points et d'arêtes, 
+les points étant appelés sommets et les arêtes étant des segments reliant ces points.
+Nous noterons les sommets du graphe par
+\begin{equation*}
+    \mathcal{V}  = \{ v_1, v_2, \ldots, v_m \}
+\end{equation*}
+
+où \( m \) est le nombre de sommets du graphe.
+
+Une arête est un segment reliant deux sommets,
+nous noterons les arêtes par
+\begin{equation*}
+    \mathcal{E}  = \{ e_1, e_2, \ldots, e_k \}
+\end{equation*}
+
+où \( k \) est le nombre d'arêtes du graphe.
+
+
+\subsection{Distance entre deux points}
+
+Le plan étant un espace euclidien de $k$ dimensions,
+la distance entre deux points \( p_i \) et \( p_j \) est donnée par la formule de la distance euclidienne :
+\begin{equation*}
+    d(p_i, p_j) = \sqrt{(p_i^1 - p_j^1)^2 + (p_i^2 - p_j^2)^2 + \ldots + (p_i^k - p_j^k)^2}
+\end{equation*}
+où \( p_i^1, p_i^2, \ldots, p_i^k \) sont les coordonnées du point \( p_i \) dans le plan.
+
+\subsection{Graphe connexe}
+
+Un graphe est dit connexe si, pour chaque paire de sommets \( v_i \) et \( v_j \), il existe un chemin reliant ces deux sommets.
+Un chemin est une suite de sommets \( v_{i_1}, v_{i_2}, \ldots, v_{i_k} \) tels que chaque paire de sommets consécutifs \( (v_{i_j}, v_{i_{j+1}}) \) est reliée par une arête.
+Un graphe connexe est un graphe dans lequel il existe un chemin entre chaque paire de sommets.
+
+plus formellement, un graphe connexe est un graphe \( \mathcal{G} = (\mathcal{V}, \mathcal{E}) \) 
+$\mathcal{G}$ est connexe si et seulement si :
+
+\begin{equation*}
+    \forall v_i, v_j \in \mathcal{V}, \exists w_1, w_2, \ldots, w_k \in \mathcal{V} \text{ tels que } (v_i, w_1), (w_1, w_2), \ldots, (w_{k-1}, w_k), (w_k, v_j) \in \mathcal{E}
+\end{equation*}
+
+\subsection{Poids d'un graphe}
+
+
+En considerant l'ensemble des points \( \mathcal{P} \) et le graphe \( \mathcal{G} = (\mathcal{V}, \mathcal{E}) \),
+
+
+Un poids est une application $\Omega$ qui associe un nombre réel à une paire graphe et ensemble de points :
+
+\begin{gather*}
+    \Omega : \mathcal{G} \times \mathcal{P} \to \mathbb{R}
+\end{gather*}
+
+on peut calculer un "poids" associé au graphe $\mathcal{G}$, 
+en fonction de l'ensemble de points \( \mathcal{P} \) et des sommets du graphe \( \mathcal{V} \).
+Plusieurs poids peuvent être définis, avec leurs methodes de calcul propres.
+
+Prenons un exemples,
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=2]
+    % Points de l'ensemble P
+    \fill[red] (0,0) circle (2pt);
+    \fill[red] (1,0) circle (2pt);
+    \fill[red] (0,1) circle (2pt);
+    \node[red] at (0,0) [below left] {$p_1$};
+    \node[red] at (1,0) [below right] {$p_2$};
+    \node[red] at (0,1) [above left] {$p_3$};
+    
+    % Sommets du graphe
+    \fill[blue] (0.5,0) circle (2pt);
+    \fill[blue] (0,0.5) circle (2pt);
+    \node[blue] at (0.5,0) [below] {$v_1$};
+    \node[blue] at (0,0.5) [left] {$v_2$};
+    
+    % Arête du graphe
+    \draw[blue, thick] (0.5,0) -- (0,0.5);
+    
+    % Légende
+    \node[red] at (1.5,0.6) {Points $\mathcal{P}$};
+    \node[blue] at (1.5,0.4) {Graphe $\mathcal{G}$};
+\end{tikzpicture}
+\caption{Exemple d'un ensemble de points et d'un graphe au poids probablement faible}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=2]
+    % Points de l'ensemble P
+    \fill[red] (0,0) circle (2pt);
+    \fill[red] (1,0) circle (2pt);
+    \fill[red] (0,1) circle (2pt);
+    \node[red] at (0,0) [below left] {$p_1$};
+    \node[red] at (1,0) [below right] {$p_2$};
+    \node[red] at (0,1) [above left] {$p_3$};
+    
+    % Sommets du graphe (positions sous-optimales)
+    \fill[blue] (1.5,1.5) circle (2pt);
+    \fill[blue] (1.2,0.8) circle (2pt);
+    \node[blue] at (1.5,1.5) [above right] {$v_1$};
+    \node[blue] at (1.2,0.8) [right] {$v_2$};
+    
+    % Arête du graphe
+    \draw[blue, thick] (1.5,1.5) -- (1.2,0.8);
+    
+    % Légende
+    \node[red] at  (1.5,0.6) {Points $\mathcal{P}$};
+    \node[blue] at (1.5,0.4) {Graphe $\mathcal{G}'$};
+\end{tikzpicture}
+\caption{Exemple d'un graphe avec un poids plus élevé - les sommets sont éloignés des points}
+\end{figure}
+
+
+Evidement, tout dépends de la façon dont on calcule le poids du graphe.
+
+
+\subsubsection{A points et noeuds egaux}
+
+Si le nombre de points dans l'ensemble \( \mathcal{P} \) est égal au nombre de sommets dans le graphe \( \mathcal{G} \),
+
+Alors il peut exister une correspondance entre les points de l'ensemble \( \mathcal{P} \) et les sommets du graphe \( \mathcal{G} \).
+
+Cela se traduit par l'existence d'une bijection \( f : \mathcal{P} \to \mathcal{V} \) 
+
+Dans ce cas, on peut définir le poids du graphe \( \mathcal{G} \) par la distance entre les points de l'ensemble \( \mathcal{P} \) et les sommets du graphe \( \mathcal{V} \).
+
+\begin{equation*}
+    \Omega_1(\mathcal{G}) = \sum_{p_i \in \mathcal{P}} d(p_i, f(p_i))
+\end{equation*}
+
+
+exemples visuel :
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=2]
+    % Points de l'ensemble P
+    \fill[red] (0,0) circle (2pt);
+    \fill[red] (1,0) circle (2pt);
+    \fill[red] (0,1) circle (2pt);
+    \node[red] at (0,0) [below left] {$p_1$};
+    \node[red] at (1,0) [below right] {$p_2$};
+    \node[red] at (0,1) [above left] {$p_3$};
+    
+    % Sommets du graphe correspondants
+    \fill[blue] (0.1,0.1) circle (2pt);
+    \fill[blue] (0.9,0.1) circle (2pt);
+    \fill[blue] (0.1,0.9) circle (2pt);
+    \node[blue] at (0.1,0.1) [below right] {$v_1$};
+    \node[blue] at (0.9,0.1) [below left] {$v_2$};
+    \node[blue] at (0.1,0.9) [above right] {$v_3$};
+    
+    % Arêtes du graphe
+    \draw[blue, thick] (0.1,0.1) -- (0.9,0.1);
+    \draw[blue, thick] (0.1,0.1) -- (0.1,0.9);
+    
+    % Correspondances avec des flèches pointillées
+    \draw[gray, dashed, ->] (0,0) -- (0.1,0.1);
+    \draw[gray, dashed, ->] (1,0) -- (0.9,0.1);
+    \draw[gray, dashed, ->] (0,1) -- (0.1,0.9);
+    
+    % Légende
+    \node[red] at (1.5,0.8) {Points $\mathcal{P}$};
+    \node[blue] at (1.5,0.6) {Graphe $\mathcal{G}$};
+    \node[gray] at (1.5,0.4) {Correspondance $f$};
+\end{tikzpicture}
+\caption{Correspondance bijective entre points et sommets - poids faible avec $\Omega_1(\mathcal{G}) = d(p_1,v_1) + d(p_2,v_2) + d(p_3,v_3)$}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=2]
+    % Points de l'ensemble P
+    \fill[red] (0,0) circle (2pt);
+    \fill[red] (1,0) circle (2pt);
+    \fill[red] (0,1) circle (2pt);
+    \node[red] at (0,0) [below left] {$p_1$};
+    \node[red] at (1,0) [below right] {$p_2$};
+    \node[red] at (0,1) [above left] {$p_3$};
+    
+    % Sommets du graphe mal placés
+    \fill[blue] (1.5,0.5) circle (2pt);
+    \fill[blue] (0.8,1.2) circle (2pt);
+    \fill[blue] (1.3,1.1) circle (2pt);
+    \node[blue] at (1.5,0.5) [right] {$v_1$};
+    \node[blue] at (0.8,1.2) [above] {$v_2$};
+    \node[blue] at (1.3,1.1) [right] {$v_3$};
+    
+    % Arêtes du graphe
+    \draw[blue, thick] (1.5,0.5) -- (0.8,1.2);
+    \draw[blue, thick] (0.8,1.2) -- (1.3,1.1);
+    
+    % Correspondances avec des flèches pointillées (distances plus grandes)
+    \draw[gray, dashed, ->] (0,0) -- (1.5,0.5);
+    \draw[gray, dashed, ->] (1,0) -- (0.8,1.2);
+    \draw[gray, dashed, ->] (0,1) -- (1.3,1.1);
+    
+    % Légende
+    \node[red] at (1.8,0.9) {Points $\mathcal{P}$};
+    \node[blue] at (1.8,0.7) {Graphe $\mathcal{G}'$};
+    \node[gray] at (1.8,0.5) {Correspondance $f'$};
+\end{tikzpicture}
+\caption{Correspondance sous-optimale - poids élevé avec $\Omega_1(\mathcal{G}') > \Omega_1(\mathcal{G})$}
+\end{figure}
+
+
+
+\subsubsection{A points et noeuds quelquonques}
+
+
+
+On pourrais avoir envie de calculer le poids du graphe comme étant la somme des distances entre les points de l'ensemble \( \mathcal{P} \) et les sommets du graphe \( \mathcal{V} \),
+\begin{equation*}
+    \Omega_2(\mathcal{G}) = \sum_{v_i \in \mathcal{V}} \sum_{p_j \in \mathcal{P}} d(v_i, p_j)
+\end{equation*}
+Cepandant cette approche tends à concentrer tout les sommets sur le barycentre de l'ensemble de points \( \mathcal{P} \),
+ce qui n'est pas forcement l'objectif recherché. 
+
+
+Une approche plus intéressant est de considérer le poids du graphe comme etant
+la somme des minimums des distances entre les points de l'ensemble \( \mathcal{P} \) et les sommets du graphe \( \mathcal{V} \),
+\begin{equation*}
+    \Omega_3(\mathcal{G}) = \sum_{p_j \in \mathcal{P}} \min_{v_i \in \mathcal{V}} d(v_i, p_j)
+\end{equation*}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=2]
+% Points de l'ensemble P
+\fill[red] (0,0) circle (2pt);
+\fill[red] (2,0) circle (2pt);
+\fill[red] (0,2) circle (2pt);
+\fill[red] (1.5,1.5) circle (2pt);
+\node[red] at (0,0) [below left] {$p_1$};
+\node[red] at (2,0) [below right] {$p_2$};
+\node[red] at (0,2) [above left] {$p_3$};
+\node[red] at (1.5,1.5) [above right] {$p_4$};
+
+% Sommets du graphe
+\fill[blue] (0.5,0.5) circle (2pt);
+\fill[blue] (1.2,0.8) circle (2pt);
+\node[blue] at (0.5,0.5) [below left] {$v_1$};
+\node[blue] at (1.2,0.8) [below right] {$v_2$};
+
+% Arête du graphe
+\draw[blue, thick] (0.5,0.5) -- (1.2,0.8);
+
+% Lignes pointillées vers les sommets les plus proches
+\draw[gray, dashed] (0,0) -- (0.5,0.5);
+\draw[gray, dashed] (2,0) -- (1.2,0.8);
+\draw[gray, dashed] (0,2) -- (0.5,0.5);
+\draw[gray, dashed] (1.5,1.5) -- (1.2,0.8);
+
+% Légende
+\node[red] at (2.5,1.8) {Points $\mathcal{P}$};
+\node[blue] at (2.5,1.6) {Graphe $\mathcal{G}$};
+\node[gray] at (2.5,1.4) {Distances minimales};
+\end{tikzpicture}
+\caption{Exemple avec $\Omega_3(\mathcal{G}) = \min(d(p_1,v_1), d(p_1,v_2)) + \min(d(p_2,v_1), d(p_2,v_2)) + \min(d(p_3,v_1), d(p_3,v_2)) + \min(d(p_4,v_1), d(p_4,v_2))$}
+\end{figure}
+
+Cette approche permet d'assigner chaque point au sommet le plus proche, évitant ainsi la concentration de tous les sommets au barycentre. Chaque point contribue au poids total par sa distance au sommet le plus proche du graphe.
+
+
+En modifiant légèrement la formule des poids, on peut définir:
+
+\begin{equation*}
+    \Omega_1^n(\mathcal{G}) = \begin{cases} 
+        \sqrt[n]{\sum_{p_i \in \mathcal{P}} d(p_i, f(p_i))^n } & \text{si } n \in \mathbb{N}^*\\
+        \max_{p_i \in \mathcal{P}} d(p_i, f(p_i)) & \text{si } n = \infty
+    \end{cases}
+\end{equation*}
+
+\begin{equation*}
+    \Omega_2^n(\mathcal{G}) = \begin{cases} 
+        \sqrt[n]{\sum_{v_i \in \mathcal{V}} \sum_{p_j \in \mathcal{P}} d(v_i, p_j)^n } & \text{si } n \in \mathbb{N}^*\\
+        \max_{v_i \in \mathcal{V}, p_j \in \mathcal{P}} d(v_i, p_j) & \text{si } n = \infty
+    \end{cases}
+\end{equation*}
+
+\begin{equation*}
+    \Omega_3^n(\mathcal{G}) = \begin{cases} 
+        \sqrt[n]{\sum_{p_j \in \mathcal{P}} \min_{v_i \in \mathcal{V}} d(v_i, p_j)^n } & \text{si } n \in \mathbb{N}^*\\
+        \max_{p_j \in \mathcal{P}} \min_{v_i \in \mathcal{V}} d(v_i, p_j) & \text{si } n = \infty
+    \end{cases}
+\end{equation*}
+Ces formules permettent de généraliser les poids en fonction d'un paramètre \( n \),
+où \( n \) peut être un entier positif ou l'infini.
+
+pour $n=1$, on retrouve les poids précédents,
+pour $n=2$, on obtient une moyenne quadratique des distances,
+cela se résume en un poids qui est plus sensible aux distances élevées,
+et pour \( n = \infty \), on obtient le poids maximum, 
+
+\section{}
+
+Conclusion du document.
+
+\end{document}
