@@ -2,33 +2,27 @@ import dearpygui.dearpygui as dpg
 import math
 import random
 import numpy as np
-from errorcalc import calculate_graph_connectivity, er_lin, er_sq, er_max
+from errorcalc import calculate_graph_connectivity, cout_snt, cout_total, cout_min
 from learning import optimize_nodes, make_error_function, mutate_nodes
 
+# Window sizes
 WINDOW_WIDTH = 1400
 WINDOW_HEIGHT = 800
 WINDOW_INFO_WH = (400, 800)
 WINDOW_GRAPH_WH = (1000, 800)
 
-# Example set of coordinates (x, y)
-coordinates:np.ndarray = np.array([
-    [100, 100],
-    [200, 150],
-    [300, 100],
-    [400, 200],
-    [250, 300],
-    [120, 250]
-]).astype(np.float32)
+DRONE_COUNT = 10
+DRONE_SPAWN_RADIUS = 100
 
+# options
+auto_mutate_rate = 100 # ms 
+auto_mutate_n = 1
+error_power = 1
+
+# Example set of coordinates (x, y)
+coordinates:np.ndarray = np.random.uniform(WINDOW_GRAPH_WH[0]/2-DRONE_SPAWN_RADIUS, WINDOW_GRAPH_WH[0]/2+DRONE_SPAWN_RADIUS, (DRONE_COUNT, 2)).astype(np.float32)
 # Targets
-target_coordinates:np.ndarray = np.array([
-    [320, 200],
-    [200, 400],
-    [320, 400],
-    [100, 500],
-    [200, 600],
-    [320, 700]
-]).astype(np.float32)
+target_coordinates:np.ndarray = np.random.uniform(0, WINDOW_GRAPH_WH[1], (DRONE_COUNT, 2)).astype(np.float32)
 
 history = []
 
@@ -162,21 +156,21 @@ def update_dist_threshold(sender, app_data):
     draw_graph(None, None)
 
 def update_error(sender, app_data):
-    dpg.set_value("error_linear_text", "Error Linear: " + str(er_lin(coordinates, target_coordinates)))
-    dpg.set_value("error_square_text", "Error Square: " + str(er_sq(coordinates, target_coordinates)))
-    dpg.set_value("error_max_text", "Error Max: " + str(er_max(coordinates, target_coordinates)))
+    dpg.set_value("error_linear_text", "Error Linear: " + str(cout_snt(coordinates, target_coordinates)))
+    dpg.set_value("error_square_text", "Error Square: " + str(cout_total(coordinates, target_coordinates)))
+    dpg.set_value("error_max_text", "Error Max: " + str(cout_min(coordinates, target_coordinates)))
     dpg.set_value("connectivity_text", "Connectivity: " + str(calculate_graph_connectivity(coordinates, DIST_THRESHOLD)))
 
 def optimize_nodes_callback(sender, app_data):
     global coordinates
-    best_nodes = optimize_nodes(coordinates, target_coordinates, make_error_function(DIST_THRESHOLD, error_function))
+    best_nodes = optimize_nodes(coordinates, target_coordinates, make_error_function(DIST_THRESHOLD, error_function, error_power))
     coordinates = best_nodes
     draw_graph(None, None)
     update_error(None, None)
 
 def mutate_nodes_callback(sender, app_data):
     global coordinates
-    coordinates, hist = mutate_nodes(coordinates, target_coordinates, make_error_function(DIST_THRESHOLD, error_function))
+    coordinates, hist = mutate_nodes(coordinates, target_coordinates, make_error_function(DIST_THRESHOLD, error_function, error_power))
     history.extend(hist)
     draw_graph(None, None)
     update_error(None, None)
@@ -184,25 +178,38 @@ def mutate_nodes_callback(sender, app_data):
 def auto_mutate_callback(sender, app_data):
     if dpg.get_value("auto_mutate_checkbox"):
         global coordinates
-        coordinates, hist = mutate_nodes(coordinates, target_coordinates, make_error_function(DIST_THRESHOLD, error_function), n_mutations=10)
+        coordinates, hist = mutate_nodes(coordinates, target_coordinates, make_error_function(DIST_THRESHOLD, error_function, error_power), n_mutations=auto_mutate_n)
         history.extend(hist)
         draw_graph(None, None)
         update_error(None, None)
-        dpg.set_frame_callback(dpg.get_frame_count() + int(0.1 / dpg.get_delta_time()), auto_mutate_callback)
+        dpg.set_frame_callback(dpg.get_frame_count() + int(auto_mutate_rate*0.001 / dpg.get_delta_time()), auto_mutate_callback)
 
 
-error_function = er_sq
+error_function = cout_total
 def update_error_function(sender, app_data):
     global error_function
     print(app_data)
     functions = {
-        "Linear": er_lin,
-        "Square": er_sq,
-        "Max": er_max
+        "SNT": cout_snt,
+        "Total": cout_total,
+        "Min": cout_min
     }
-    error_function = make_error_function(DIST_THRESHOLD, functions[app_data])
+    error_function = functions[app_data]
+    # make_error_function(DIST_THRESHOLD, functions[app_data], error_power)
     draw_graph(None, None)
     update_error(None, None)
+
+def update_auto_mutate_n(sender, app_data):
+    global auto_mutate_n
+    auto_mutate_n = app_data
+
+def update_auto_mutate_rate(sender, app_data):
+    global auto_mutate_rate
+    auto_mutate_rate = app_data
+
+def update_error_power(sender, app_data):
+    global error_power
+    error_power = app_data
 
 def main():
     dpg.create_context()
@@ -226,11 +233,14 @@ def main():
         dpg.add_text(label="Error Max",tag="error_max_text", parent="Info")
         dpg.add_text(label="Connectivity",tag="connectivity_text", parent="Info")
         dpg.add_button(label="Mutate",callback=mutate_nodes_callback)
+        dpg.add_input_int(label="Auto Mutate N",default_value=auto_mutate_n,callback=update_auto_mutate_n)
+        dpg.add_input_int(label="Auto Mutate Rate",default_value=auto_mutate_rate,callback=update_auto_mutate_rate)
+        dpg.add_input_int(label="Error power",default_value=1,callback=update_error_power)
 
         dpg.add_combo(
             label="Error Function",
-            items=["Linear", "Square", "Max"],
-            default_value="Square",
+            items=["SNT", "Total", "Min"],
+            default_value="Total",
             tag="error_function_combo",
             callback=update_error_function
         )

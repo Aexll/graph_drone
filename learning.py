@@ -1,7 +1,7 @@
 # using reinforcement learning to learn the graph connectivity
 # 
 import numpy as np
-from errorcalc import calculate_error_graph, calculate_graph_connectivity, er_sq
+from errorcalc import calculate_graph_connectivity, cout_snt, cout_total, cout_min
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
@@ -15,10 +15,10 @@ def flatten_nodes(nodes):
 def unflatten_nodes(flat_nodes, n_nodes):
     return flat_nodes.reshape((n_nodes, 2))
 
-def make_error_function(dist_threshold, error_type):
+def make_error_function(dist_threshold, error_type, error_power):
     a_lot = 100000000000
     def error_function(nodes, targets):
-        return calculate_error_graph(nodes, targets, error_type) + (1-calculate_graph_connectivity(nodes, dist_threshold))*a_lot
+        return error_type(nodes, targets, error_power) + (1-calculate_graph_connectivity(nodes, dist_threshold))*a_lot
     return error_function
 
 
@@ -46,9 +46,6 @@ def mutate_nodes(nodes, targets, error_function, n_mutations=1000):
             history.append(nodes.copy())
         else:
             nodes = nodes - random
-    
-        # print(f"Error: {error}, New Error: {new_error}")
-    nodes = np.array(nodes)
     return nodes, history
 
 
@@ -61,7 +58,7 @@ if __name__ == "__main__":
     def error_function(nodes, targets):
         connectivity = calculate_graph_connectivity(nodes, DIST_THRESHOLD)
         penalty = (1 - connectivity) ** 2 * a_lot  # p=2 ici
-        return calculate_error_graph(nodes, targets, er_sq) + penalty
+        return cout_total(nodes, targets) + penalty
 
 
 

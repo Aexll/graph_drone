@@ -93,23 +93,21 @@ $\mathcal{G}$ est connexe si et seulement si :
     \forall v_i, v_j \in \mathcal{V}, \exists w_1, w_2, \ldots, w_k \in \mathcal{V} \text{ tels que } (v_i, w_1), (w_1, w_2), \ldots, (w_{k-1}, w_k), (w_k, v_j) \in \mathcal{E}
 \end{equation*}
 
-\subsection{Poids d'un graphe}
+\subsection{Coût d'un graphe}
 
+En considérant l'ensemble des points $\mathcal{P}$ et le graphe $\mathcal{G} = (\mathcal{V}, \mathcal{E})$,
 
-En considerant l'ensemble des points \( \mathcal{P} \) et le graphe \( \mathcal{G} = (\mathcal{V}, \mathcal{E}) \),
-
-
-Un poids est une application $\Omega$ qui associe un nombre réel à une paire graphe et ensemble de points :
+Un coût est une application $\Omega$ qui associe un nombre réel à une paire graphe et ensemble de points :
 
 \begin{gather*}
     \Omega : \mathcal{G} \times \mathcal{P} \to \mathbb{R}
 \end{gather*}
 
-on peut calculer un "poids" associé au graphe $\mathcal{G}$, 
-en fonction de l'ensemble de points \( \mathcal{P} \) et des sommets du graphe \( \mathcal{V} \).
-Plusieurs poids peuvent être définis, avec leurs methodes de calcul propres.
+On peut calculer un "coût" associé au graphe $\mathcal{G}$, 
+en fonction de l'ensemble de points $\mathcal{P}$ et des sommets du graphe $\mathcal{V}$.
+Plusieurs fonctions de coût peuvent être définies, avec leurs méthodes de calcul propres.
 
-Prenons un exemples,
+Prenons un exemple,
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[scale=2]
@@ -134,7 +132,7 @@ Prenons un exemples,
     \node[red] at (1.5,0.6) {Points $\mathcal{P}$};
     \node[blue] at (1.5,0.4) {Graphe $\mathcal{G}$};
 \end{tikzpicture}
-\caption{Exemple d'un ensemble de points et d'un graphe au poids probablement faible}
+\caption{Exemple d'un ensemble de points et d'un graphe au coût probablement faible}
 \end{figure}
 
 \begin{figure}[H]
@@ -161,29 +159,28 @@ Prenons un exemples,
     \node[red] at  (1.5,0.6) {Points $\mathcal{P}$};
     \node[blue] at (1.5,0.4) {Graphe $\mathcal{G}'$};
 \end{tikzpicture}
-\caption{Exemple d'un graphe avec un poids plus élevé - les sommets sont éloignés des points}
+\caption{Exemple d'un graphe avec un coût plus élevé - les sommets sont éloignés des points}
 \end{figure}
 
 
-Evidement, tout dépends de la façon dont on calcule le poids du graphe.
+Evidemment, tout dépend de la façon dont on calcule le coût du graphe.
 
 
-\subsubsection{A points et noeuds egaux}
+\subsubsection{À points et noeuds égaux}
 
-Si le nombre de points dans l'ensemble \( \mathcal{P} \) est égal au nombre de sommets dans le graphe \( \mathcal{G} \),
+Si le nombre de points dans l'ensemble $\mathcal{P}$ est égal au nombre de sommets dans le graphe $\mathcal{G}$,
 
-Alors il peut exister une correspondance entre les points de l'ensemble \( \mathcal{P} \) et les sommets du graphe \( \mathcal{G} \).
+Alors il peut exister une correspondance entre les points de l'ensemble $\mathcal{P}$ et les sommets du graphe $\mathcal{G}$.
 
-Cela se traduit par l'existence d'une bijection \( f : \mathcal{P} \to \mathcal{V} \) 
+Cela se traduit par l'existence d'une bijection $f : \mathcal{P} \to \mathcal{V}$
 
-Dans ce cas, on peut définir le poids du graphe \( \mathcal{G} \) par la distance entre les points de l'ensemble \( \mathcal{P} \) et les sommets du graphe \( \mathcal{V} \).
+Dans ce cas, on peut définir le coût du graphe $\mathcal{G}$ par la distance entre les points de l'ensemble $\mathcal{P}$ et les sommets du graphe $\mathcal{V}$.
 
 \begin{equation*}
     \Omega_1(\mathcal{G}) = \sum_{p_i \in \mathcal{P}} d(p_i, f(p_i))
 \end{equation*}
 
-
-exemples visuel :
+exemples visuels :
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[scale=2]
@@ -217,7 +214,7 @@ exemples visuel :
     \node[blue] at (1.5,0.6) {Graphe $\mathcal{G}$};
     \node[gray] at (1.5,0.4) {Correspondance $f$};
 \end{tikzpicture}
-\caption{Correspondance bijective entre points et sommets - poids faible avec $\Omega_1(\mathcal{G}) = d(p_1,v_1) + d(p_2,v_2) + d(p_3,v_3)$}
+\caption{Correspondance bijective entre points et sommets - coût faible avec $\Omega_1(\mathcal{G}) = d(p_1,v_1) + d(p_2,v_2) + d(p_3,v_3)$}
 \end{figure}
 
 \begin{figure}[H]
@@ -253,25 +250,22 @@ exemples visuel :
     \node[blue] at (1.8,0.7) {Graphe $\mathcal{G}'$};
     \node[gray] at (1.8,0.5) {Correspondance $f'$};
 \end{tikzpicture}
-\caption{Correspondance sous-optimale - poids élevé avec $\Omega_1(\mathcal{G}') > \Omega_1(\mathcal{G})$}
+\caption{Correspondance sous-optimale - coût élevé avec $\Omega_1(\mathcal{G}') > \Omega_1(\mathcal{G})$}
 \end{figure}
 
 
 
-\subsubsection{A points et noeuds quelquonques}
+\subsubsection{À points et noeuds quelconques}
 
-
-
-On pourrais avoir envie de calculer le poids du graphe comme étant la somme des distances entre les points de l'ensemble \( \mathcal{P} \) et les sommets du graphe \( \mathcal{V} \),
+On pourrait avoir envie de calculer le coût du graphe comme étant la somme des distances entre les points de l'ensemble $\mathcal{P}$ et les sommets du graphe $\mathcal{V}$,
 \begin{equation*}
     \Omega_2(\mathcal{G}) = \sum_{v_i \in \mathcal{V}} \sum_{p_j \in \mathcal{P}} d(v_i, p_j)
 \end{equation*}
-Cepandant cette approche tends à concentrer tout les sommets sur le barycentre de l'ensemble de points \( \mathcal{P} \),
-ce qui n'est pas forcement l'objectif recherché. 
+Cependant cette approche tend à concentrer tous les sommets sur le barycentre de l'ensemble de points $\mathcal{P}$,
+ce qui n'est pas forcément l'objectif recherché.
 
-
-Une approche plus intéressant est de considérer le poids du graphe comme etant
-la somme des minimums des distances entre les points de l'ensemble \( \mathcal{P} \) et les sommets du graphe \( \mathcal{V} \),
+Une approche plus intéressante est de considérer le coût du graphe comme étant
+la somme des minimums des distances entre les points de l'ensemble $\mathcal{P}$ et les sommets du graphe $\mathcal{V}$,
 \begin{equation*}
     \Omega_3(\mathcal{G}) = \sum_{p_j \in \mathcal{P}} \min_{v_i \in \mathcal{V}} d(v_i, p_j)
 \end{equation*}
@@ -312,10 +306,9 @@ la somme des minimums des distances entre les points de l'ensemble \( \mathcal{P
 \caption{Exemple avec $\Omega_3(\mathcal{G}) = \min(d(p_1,v_1), d(p_1,v_2)) + \min(d(p_2,v_1), d(p_2,v_2)) + \min(d(p_3,v_1), d(p_3,v_2)) + \min(d(p_4,v_1), d(p_4,v_2))$}
 \end{figure}
 
-Cette approche permet d'assigner chaque point au sommet le plus proche, évitant ainsi la concentration de tous les sommets au barycentre. Chaque point contribue au poids total par sa distance au sommet le plus proche du graphe.
+Cette approche permet d'assigner chaque point au sommet le plus proche, évitant ainsi la concentration de tous les sommets au barycentre. Chaque point contribue au coût total par sa distance au sommet le plus proche du graphe.
 
-
-En modifiant légèrement la formule des poids, on peut définir:
+En modifiant légèrement la formule des coûts, on peut définir:
 
 \begin{equation*}
     \Omega_1^n(\mathcal{G}) = \begin{cases} 
@@ -337,13 +330,13 @@ En modifiant légèrement la formule des poids, on peut définir:
         \max_{p_j \in \mathcal{P}} \min_{v_i \in \mathcal{V}} d(v_i, p_j) & \text{si } n = \infty
     \end{cases}
 \end{equation*}
-Ces formules permettent de généraliser les poids en fonction d'un paramètre \( n \),
-où \( n \) peut être un entier positif ou l'infini.
+Ces formules permettent de généraliser les coûts en fonction d'un paramètre $n$,
+où $n$ peut être un entier positif ou l'infini.
 
-pour $n=1$, on retrouve les poids précédents,
+pour $n=1$, on retrouve les coûts précédents,
 pour $n=2$, on obtient une moyenne quadratique des distances,
-cela se résume en un poids qui est plus sensible aux distances élevées,
-et pour \( n = \infty \), on obtient le poids maximum, 
+cela se résume en un coût qui est plus sensible aux distances élevées,
+et pour $n = \infty$, on obtient le coût maximum, 
 
 \section{}
 
