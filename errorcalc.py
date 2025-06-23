@@ -96,6 +96,21 @@ def calculate_graph_connectivity(nodes,dist_threshold):
     return not (0 in connected(0, len(nodes), graph))
 
 
+# BFS mieux optimisé
+def is_graph_connected(nodes, dist_threshold):
+    graph = nodes_to_matrix(nodes, dist_threshold)
+    n = len(nodes)
+    visited = np.zeros(n, dtype=bool)
+    queue = [0]
+    visited[0] = True
+    while queue:
+        current = queue.pop(0)
+        neighbors = np.where(graph[current] == 1)[0]
+        for neighbor in neighbors:
+            if not visited[neighbor]:
+                visited[neighbor] = True
+                queue.append(neighbor)
+    return visited.all()
 
 # Erreur
 
@@ -124,7 +139,7 @@ def calculate_graph_connectivity(nodes,dist_threshold):
 
 def error_function_wrapper(nodes, targets, dist_threshold, cost_function, cost_power):
     alot = 1000000
-    if calculate_graph_connectivity(nodes, dist_threshold):
+    if is_graph_connected(nodes, dist_threshold):
         return cost_function(nodes, targets, cost_power)
     else:
         return cost_function(nodes, targets, cost_power) + alot
@@ -140,23 +155,51 @@ def mutate_nodes(nodes, targets, start_error, stepsize, error_function):
     else:
         return nodes, start_error
 
+def mutate_nodes_genetic_sampling(nodes, targets, start_error, stepsize, error_function, sampling_size=10):
+    candidates = [mutate_nodes(nodes, targets, start_error, stepsize, error_function) for _ in range(sampling_size)]
+    # Each candidate is a tuple: (nodes, error)
+    best_nodes, best_error = min(candidates, key=lambda x: x[1])
+    return best_nodes, best_error
 
-def calc_optimal_graph(targets, dist_threshold, cost_function, cost_power, steps=10000):
+
+
+
+def calc_optimal_graph(targets, dist_threshold, cost_function, cost_power, steps=10000, mutation_stepsize=1):
     barycenter = np.mean(targets, axis=0)
     nodes = np.full((len(targets), 2), barycenter).astype(np.float32)
     error = error_function_wrapper(nodes, targets, dist_threshold, cost_function, cost_power)
     for i in range(steps):
-        nodes, error = mutate_nodes(
-            nodes, targets, error, stepsize=(1-i/steps),
+        nodes, error = mutate_nodes_genetic_sampling(
+            nodes, targets, error, stepsize=(1-i/steps)*mutation_stepsize,
             error_function=lambda n, t: error_function_wrapper(n, t, dist_threshold, cost_function, cost_power)
         )
     return nodes
 
 
-def multicalc_optimal_graph(targets, dist_threshold, cost_function, cost_power, ngraphs=10, steps=10000):
-    with mp.Pool(ngraphs) as pool:
-        args = [(targets, dist_threshold, cost_function, cost_power, steps) for _ in range(ngraphs)]
-        results = pool.starmap(calc_optimal_graph, args)
+
+# At the top of your file
+global_targets = None
+
+def worker_init(targets):
+    global global_targets
+    global_targets = targets
+
+def calc_optimal_graph_worker(dist_threshold, cost_function, cost_power, steps, mutation_stepsize):
+    global global_targets
+    return calc_optimal_graph(global_targets, dist_threshold, cost_function, cost_power, steps, mutation_stepsize)
+
+
+# def multicalc_optimal_graph(targets, dist_threshold, cost_function, cost_power, ngraphs=10, steps=10000):
+
+#     with mp.Pool(ngraphs) as pool:
+#         args = [(targets, dist_threshold, cost_function, cost_power, steps) for _ in range(ngraphs)]
+#         results = pool.starmap(calc_optimal_graph, args)
+#     return results
+
+def multicalc_optimal_graph(targets, dist_threshold, cost_function, cost_power, ngraphs=1000, steps=10000, mutation_stepsize=1.0):
+    with mp.Pool(ngraphs, initializer=worker_init, initargs=(targets,)) as pool:
+        args = [(dist_threshold, cost_function, cost_power, steps, mutation_stepsize) for _ in range(ngraphs)]
+        results = pool.starmap(calc_optimal_graph_worker, args)
     return results
 
 
@@ -167,11 +210,17 @@ def multicalc_optimal_graph(targets, dist_threshold, cost_function, cost_power, 
 
 
 
-
 if __name__ == "__main__":
-    nodes = np.array([[0,0],[1,0],[0,1],[1,1]])
-    targets = np.array([[0,0],[3,0],[0,3],[3,4]])
-    dist_threshold = 1.1
+
+    np.random.seed(28)
+    NB_NODES = 20
+    BOX_SIZE = 10
+#
+    # nodes = np.array([[0,0],[1,0],[0,1],[1,1]])
+    # targets = np.array([[0,0],[3,0],[0,3],[3,4]])
+    dist_threshold = 1.5
+    targets = np.random.uniform(0, BOX_SIZE, (NB_NODES, 2)).astype(np.float32)
+    # nodes = np.full((len(targets), 2), np.mean(targets, axis=0)).astype(np.float32)
     # print("nodes", nodes)
     # print("targets", targets)
     # print("distances", np.linalg.norm(nodes - targets, axis=1))
@@ -189,7 +238,11 @@ if __name__ == "__main__":
     import time
 
     start_time = time.time()
-    results = multicalc_optimal_graph(targets, dist_threshold, cout_snt, 2, ngraphs=10, steps=10000)
+    results = multicalc_optimal_graph(targets, dist_threshold, cout_snt, 2, 
+    ngraphs=100, 
+    steps=1000, 
+    mutation_stepsize=10
+    )
     end_time = time.time()
     print(f"Temps d'exécution: {end_time - start_time} secondes")
     # print("results", results)
