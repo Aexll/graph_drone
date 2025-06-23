@@ -155,7 +155,7 @@ def mutate_nodes(nodes, targets, start_error, stepsize, error_function):
     else:
         return nodes, start_error
 
-def mutate_nodes_genetic_sampling(nodes, targets, start_error, stepsize, error_function, sampling_size=10):
+def mutate_nodes_genetic_sampling(nodes, targets, start_error, stepsize, error_function, sampling_size):
     candidates = [mutate_nodes(nodes, targets, start_error, stepsize, error_function) for _ in range(sampling_size)]
     # Each candidate is a tuple: (nodes, error)
     best_nodes, best_error = min(candidates, key=lambda x: x[1])
@@ -164,15 +164,22 @@ def mutate_nodes_genetic_sampling(nodes, targets, start_error, stepsize, error_f
 
 
 
-def calc_optimal_graph(targets, dist_threshold, cost_function, cost_power, steps=10000, mutation_stepsize=1):
+def calc_optimal_graph(targets, dist_threshold, cost_function, cost_power, steps=10000, mutation_stepsize=1, sampling_size=10, use_genetic_sampling=False):
     barycenter = np.mean(targets, axis=0)
     nodes = np.full((len(targets), 2), barycenter).astype(np.float32)
     error = error_function_wrapper(nodes, targets, dist_threshold, cost_function, cost_power)
     for i in range(steps):
-        nodes, error = mutate_nodes_genetic_sampling(
-            nodes, targets, error, stepsize=(1-i/steps)*mutation_stepsize,
-            error_function=lambda n, t: error_function_wrapper(n, t, dist_threshold, cost_function, cost_power)
-        )
+        if use_genetic_sampling:
+            nodes, error = mutate_nodes_genetic_sampling(
+                nodes, targets, error, stepsize=(1-i/steps)*mutation_stepsize,
+                error_function=lambda n, t: error_function_wrapper(n, t, dist_threshold, cost_function, cost_power),
+                sampling_size=sampling_size
+            )
+        else:
+            nodes, error = mutate_nodes(
+                nodes, targets, error, stepsize=(1-i/steps)*mutation_stepsize,
+                error_function=lambda n, t: error_function_wrapper(n, t, dist_threshold, cost_function, cost_power)
+            )
     return nodes
 
 
@@ -184,9 +191,9 @@ def worker_init(targets):
     global global_targets
     global_targets = targets
 
-def calc_optimal_graph_worker(dist_threshold, cost_function, cost_power, steps, mutation_stepsize):
+def calc_optimal_graph_worker(dist_threshold, cost_function, cost_power, steps, mutation_stepsize, sampling_size, use_genetic_sampling):
     global global_targets
-    return calc_optimal_graph(global_targets, dist_threshold, cost_function, cost_power, steps, mutation_stepsize)
+    return calc_optimal_graph(global_targets, dist_threshold, cost_function, cost_power, steps, mutation_stepsize, sampling_size, use_genetic_sampling)
 
 
 # def multicalc_optimal_graph(targets, dist_threshold, cost_function, cost_power, ngraphs=10, steps=10000):
@@ -196,9 +203,9 @@ def calc_optimal_graph_worker(dist_threshold, cost_function, cost_power, steps, 
 #         results = pool.starmap(calc_optimal_graph, args)
 #     return results
 
-def multicalc_optimal_graph(targets, dist_threshold, cost_function, cost_power, ngraphs=1000, steps=10000, mutation_stepsize=1.0):
+def multicalc_optimal_graph(targets, dist_threshold, cost_function, cost_power, ngraphs=1000, steps=10000, mutation_stepsize=1.0, sampling_size=10, use_genetic_sampling=False):
     with mp.Pool(ngraphs, initializer=worker_init, initargs=(targets,)) as pool:
-        args = [(dist_threshold, cost_function, cost_power, steps, mutation_stepsize) for _ in range(ngraphs)]
+        args = [(dist_threshold, cost_function, cost_power, steps, mutation_stepsize, sampling_size, use_genetic_sampling) for _ in range(ngraphs)]
         results = pool.starmap(calc_optimal_graph_worker, args)
     return results
 
@@ -208,18 +215,29 @@ def multicalc_optimal_graph(targets, dist_threshold, cost_function, cost_power, 
 
 
 
+MATPLOTLIB = False
 
 
-if __name__ == "__main__":
 
-    np.random.seed(28)
-    NB_NODES = 20
-    BOX_SIZE = 10
+if __name__ == "__main__" and MATPLOTLIB:
+    # ne pas mettre de seed car le multiprocessing ne fonctionne pas avec les seeds
+
+    NB_NODES = 4
+    BOX_SIZE = 4
+    NGRAPHS = 100
+    STEPS = 1000
+    MUTATION_STEPSIZE = 1
+    SAMPLING_SIZE = 3
+    USE_GENETIC_SAMPLING = True
+    SCALE_NODES = 10
 #
     # nodes = np.array([[0,0],[1,0],[0,1],[1,1]])
-    # targets = np.array([[0,0],[3,0],[0,3],[3,4]])
-    dist_threshold = 1.5
-    targets = np.random.uniform(0, BOX_SIZE, (NB_NODES, 2)).astype(np.float32)
+    targets = np.array([[0,0],[3,0],[0,3],[3,4]]).astype(np.float32)
+
+
+    dist_threshold = 1.1
+    # targets = np.random.uniform(0, BOX_SIZE, (NB_NODES, 2)).astype(np.float32)
+    print("targets", targets)   
     # nodes = np.full((len(targets), 2), np.mean(targets, axis=0)).astype(np.float32)
     # print("nodes", nodes)
     # print("targets", targets)
@@ -239,14 +257,17 @@ if __name__ == "__main__":
 
     start_time = time.time()
     results = multicalc_optimal_graph(targets, dist_threshold, cout_snt, 2, 
-    ngraphs=100, 
-    steps=1000, 
-    mutation_stepsize=10
+    ngraphs=NGRAPHS, 
+    steps=STEPS, 
+    mutation_stepsize=MUTATION_STEPSIZE,
+    sampling_size=SAMPLING_SIZE,
+    use_genetic_sampling=USE_GENETIC_SAMPLING
     )
     end_time = time.time()
     print(f"Temps d'exécution: {end_time - start_time} secondes")
     # print("results", results)
     errors = [cout_snt(result, targets) for result in results]
+    print("errors", errors)
     # print("errors", errors)
     
     # # display the graph
@@ -267,7 +288,7 @@ if __name__ == "__main__":
     colors = [cmap(norm(error)) for error in errors]
 
     for result, color in zip(results, colors):
-        ax1.scatter(result[:, 0], result[:, 1], color=color, label=f'Error: {cout_snt(result, targets):.2f}')
+        ax1.scatter(result[:, 0], result[:, 1], color=color, label=f'Error: {cout_snt(result, targets):.2f}', s=SCALE_NODES)
 
     sm = cm.ScalarMappable(cmap=cmap, norm=norm)
     fig.colorbar(sm, ax=ax1, label='Error')
@@ -275,7 +296,7 @@ if __name__ == "__main__":
     ax1.set_title('Positions des noeuds colorées par erreur')
 
     # Plot histogram of errors
-    ax2.hist(errors, bins=20, color='gray', edgecolor='black')
+    ax2.hist(errors, bins=100, color='gray', edgecolor='black')
     ax2.set_xlabel('Error')
     ax2.set_ylabel('Count')
     ax2.set_title('Histogramme des erreurs')
