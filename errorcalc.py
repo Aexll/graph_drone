@@ -1,4 +1,8 @@
 import numpy as np
+import multiprocessing as mp
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 
 
 """
@@ -44,21 +48,17 @@ def cout_total(nodes, targets, n=1):
     > n is the power of the distance
     > dist_threshold is the distance threshold for the graph
     """
-    ret = 0
-    for node in nodes:
-        for target in targets:
-            ret += distance(node, target)**n
-    return ret**(1/n)
+    dists = np.linalg.norm(nodes[:, np.newaxis, :] - targets[np.newaxis, :, :], axis=2)
+    return np.sum(dists**n)**(1/n)
 
 def cout_min(nodes, targets, n=1):
     """
     > sum for each target of the minimum distance between the target and a node
     > n is the power of the distance
     """
-    ret = 0
-    for target in targets:
-        ret += np.min(distance(nodes, target)**n)
-    return ret**(1/n)
+    dists = np.linalg.norm(nodes[:, np.newaxis, :] - targets[np.newaxis, :, :], axis=2)
+    min_dists = np.min(dists, axis=0)
+    return np.sum(min_dists**n)**(1/n)
 
 ## Graphs matrix  
 
@@ -122,14 +122,42 @@ def calculate_graph_connectivity(nodes,dist_threshold):
 # def calculate_error_graph(nodes, targets, error_function):
 #     return error_function(nodes, targets)
 
+def error_function_wrapper(nodes, targets, dist_threshold, cost_function, cost_power):
+    alot = 1000000
+    if calculate_graph_connectivity(nodes, dist_threshold):
+        return cost_function(nodes, targets, cost_power)
+    else:
+        return cost_function(nodes, targets, cost_power) + alot
+
+def mutate_nodes(nodes, targets, start_error, stepsize, error_function):
+    # 1 - muter les noeuds
+    new_nodes = nodes + np.random.uniform(-stepsize, stepsize, nodes.shape).astype(np.float32)
+    # 2 - calculer l'erreur
+    error = error_function(new_nodes, targets)
+    # 3 - accepter ou refuser la mutation
+    if error < start_error:
+        return new_nodes, error
+    else:
+        return nodes, start_error
 
 
+def calc_optimal_graph(targets, dist_threshold, cost_function, cost_power, steps=10000):
+    barycenter = np.mean(targets, axis=0)
+    nodes = np.full((len(targets), 2), barycenter).astype(np.float32)
+    error = error_function_wrapper(nodes, targets, dist_threshold, cost_function, cost_power)
+    for i in range(steps):
+        nodes, error = mutate_nodes(
+            nodes, targets, error, stepsize=(1-i/steps),
+            error_function=lambda n, t: error_function_wrapper(n, t, dist_threshold, cost_function, cost_power)
+        )
+    return nodes
 
 
-
-
-
-
+def multicalc_optimal_graph(targets, dist_threshold, cost_function, cost_power, ngraphs=10, steps=10000):
+    with mp.Pool(ngraphs) as pool:
+        args = [(targets, dist_threshold, cost_function, cost_power, steps) for _ in range(ngraphs)]
+        results = pool.starmap(calc_optimal_graph, args)
+    return results
 
 
 
@@ -144,14 +172,61 @@ if __name__ == "__main__":
     nodes = np.array([[0,0],[1,0],[0,1],[1,1]])
     targets = np.array([[0,0],[3,0],[0,3],[3,4]])
     dist_threshold = 1.1
-    print("nodes", nodes)
-    print("targets", targets)
-    print("distances", np.linalg.norm(nodes - targets, axis=1))
-    print("average distance", np.average(np.linalg.norm(nodes - targets, axis=1)))
-    print("cout_snt", cout_snt(nodes, targets))
-    print("cout_total", cout_total(nodes, targets))
-    print("cout_min", cout_min(nodes, targets))
-    print(nodes_to_matrix(nodes, dist_threshold))
-    print(get_neighbors(0, nodes_to_matrix(nodes, dist_threshold)))
-    print(connected(0, 4, nodes_to_matrix(nodes, dist_threshold)))
-    # print(calculate_graph_connectivity(nodes, dist_threshold))
+    # print("nodes", nodes)
+    # print("targets", targets)
+    # print("distances", np.linalg.norm(nodes - targets, axis=1))
+    # print("average distance", np.average(np.linalg.norm(nodes - targets, axis=1)))
+    # print("cout_snt", cout_snt(nodes, targets))
+    # print("cout_total", cout_total(nodes, targets))
+    # print("cout_min", cout_min(nodes, targets))
+    # print(nodes_to_matrix(nodes, dist_threshold))
+    # print(get_neighbors(0, nodes_to_matrix(nodes, dist_threshold)))
+    # print(connected(0, 4, nodes_to_matrix(nodes, dist_threshold)))
+
+    # nodes = calc_optimal_graph(targets, dist_threshold, cout_snt, 2)
+    # print("nodes", nodes)
+
+    import time
+
+    start_time = time.time()
+    results = multicalc_optimal_graph(targets, dist_threshold, cout_snt, 2, ngraphs=10, steps=10000)
+    end_time = time.time()
+    print(f"Temps d'exécution: {end_time - start_time} secondes")
+    # print("results", results)
+    errors = [cout_snt(result, targets) for result in results]
+    # print("errors", errors)
+    
+    # # display the graph
+    # import matplotlib.pyplot as plt
+    # plt.scatter(nodes[:, 0], nodes[:, 1])
+    # # plt.scatter(targets[:, 0], targets[:, 1])
+    # for result in results:
+    #     plt.scatter(result[:, 0], result[:, 1])
+    # plt.show()
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 10), gridspec_kw={'height_ratios': [3, 1]})
+    # ax1.scatter(nodes[:, 0], nodes[:, 1], label='Initial nodes', color='black')
+    ax1.scatter(targets[:, 0], targets[:, 1], label='Targets', color='red')
+
+    errors = np.array(errors)
+    norm = mcolors.Normalize(vmin=errors.min(), vmax=errors.max())
+    cmap = plt.colormaps['viridis']
+    colors = [cmap(norm(error)) for error in errors]
+
+    for result, color in zip(results, colors):
+        ax1.scatter(result[:, 0], result[:, 1], color=color, label=f'Error: {cout_snt(result, targets):.2f}')
+
+    sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+    fig.colorbar(sm, ax=ax1, label='Error')
+    # ax1.legend()
+    ax1.set_title('Positions des noeuds colorées par erreur')
+
+    # Plot histogram of errors
+    ax2.hist(errors, bins=20, color='gray', edgecolor='black')
+    ax2.set_xlabel('Error')
+    ax2.set_ylabel('Count')
+    ax2.set_title('Histogramme des erreurs')
+
+    plt.tight_layout()
+    plt.show()
+        
