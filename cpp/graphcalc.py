@@ -140,10 +140,11 @@ if __name__ == "__main__":
 
 
 
-# place nodes at the barycenter of the targets
-NODES = np.array([[np.mean(TEST_TARGETS[:, 0]), np.mean(TEST_TARGETS[:, 1])]])
+# place nodes at the barycenter of the targets, same amount of nodes as targets
+NODES = np.array([[np.mean(TEST_TARGETS[:, 0]), np.mean(TEST_TARGETS[:, 1])]] * len(TEST_TARGETS))
 
-print(graphx.cout_graph_p2(TEST_NODES, TEST_TARGETS))
+
+# print(graphx.cout_graph_p2(TEST_NODES, TEST_TARGETS))
 
 # optimized_nodes = graphx.optimize_nodes_cooling(TEST_NODES, TEST_TARGETS, TEST_DIST_THRESHOLD, 0.1, 10000000)
 # optimized_nodes = graphx.optimize_nodes_history_parallel(TEST_NODES, TEST_TARGETS, TEST_DIST_THRESHOLD, 0.1, 1000, 2)
@@ -151,28 +152,51 @@ print(graphx.cout_graph_p2(TEST_NODES, TEST_TARGETS))
 # print(len(optimized_nodes))
 
 
-optimized_nodes_history = graphx.optimize_nodes_history(TEST_NODES, TEST_TARGETS, TEST_DIST_THRESHOLD, 0.1, 10000000)
-
-print(len(optimized_nodes_history))
-print(optimized_nodes_history)
-
-
-
 import matplotlib.pyplot as plt
 
-# plos the trajectory of the nodes along the history
 
+# optimized_nodes_history = graphx.optimize_nodes_history(NODES, TEST_TARGETS, TEST_DIST_THRESHOLD, 0.1, 100000)
 
-# for i in range(len(optimized_nodes)):
-#     plt.scatter(optimized_nodes[i][:, 0], optimized_nodes[i][:, 1], color='green', label='Optimized Nodes')
-# plt.show()
+# print(len(optimized_nodes_history))
+# # print(optimized_nodes_history)
 
+# # plos the trajectory of the nodes along the history
 # plt.scatter(TEST_TARGETS[:, 0], TEST_TARGETS[:, 1], color='red', label='Targets')
-# plt.scatter(optimized_nodes[:, 0], optimized_nodes[:, 1], color='green', label='Optimized Nodes')
+# for i in range(len(optimized_nodes_history)):
+#     plt.scatter(optimized_nodes_history[i][:, 0], optimized_nodes_history[i][:, 1], color='green', label='Optimized Nodes')
 # plt.show()
 
 
 
+
+# SIMPLES
+
+opti = []
+for i in range(100):
+    opti.append(graphx.optimize_nodes(NODES, TEST_TARGETS, TEST_DIST_THRESHOLD, 0.1, 100000))
+
+for i in range(len(opti)):
+    plt.scatter(opti[i][:, 0], opti[i][:, 1], color='green', label='Optimized Nodes')
+
+plt.scatter(TEST_TARGETS[:, 0], TEST_TARGETS[:, 1], color='red', label='Targets')
+# plt.scatter(optimized_nodes[:, 0], optimized_nodes[:, 1], color='green', label='Optimized Nodes')
+plt.show()
+
+
+# print("SIMPLES")
+
+# # PARALLELE
+
+# optimized_nodes_history = graphx.optimize_nodes_history_parallel_old(NODES, TEST_TARGETS, TEST_DIST_THRESHOLD, 0.1, 100000, 8)
+
+# print(len(optimized_nodes_history))
+# # print(optimized_nodes_history)
+
+# for i in range(len(optimized_nodes_history)):
+#     for j in range(len(optimized_nodes_history[i])):
+#         plt.scatter(optimized_nodes_history[i][j][:, 0], optimized_nodes_history[i][j][:, 1], color=["red", "green", "blue", "yellow", "purple", "orange", "pink", "brown", "gray", "black"][i], label='Optimized Nodes')
+
+# plt.show()
 
 # mutated_nodes = graphx.mutate_nodes(TEST_NODES, 0.1)
 

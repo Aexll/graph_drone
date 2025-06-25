@@ -63,6 +63,31 @@ bool is_connected(pybind11::array_t<double> a, pybind11::array_t<double> b, doub
     return distance_squared(a_info.get_point(0), b_info.get_point(0)) < threshold_sq;
 }
 
+
+/*
+Retourne un tuple de la taille du nombre de noeuds, qui représente le nombre de connections de chaque noeud
+(l'indice de la liste correspond au noeud et la valeur à son nombre de connections)
+*/
+std::vector<size_t> get_shape(pybind11::array_t<double> nodes, double dist_threshold) {
+    ArrayInfo nodes_info(nodes);
+    std::vector<size_t> shape(nodes_info.n, 0);
+    const double threshold_sq = dist_threshold * dist_threshold;
+    
+    for (size_t i = 0; i < nodes_info.n; ++i) {
+        const double* node_i = nodes_info.get_point(i);
+        for (size_t j = 0; j < nodes_info.n; ++j) {
+            if (i != j) {  // Un nœud ne se connecte pas à lui-même
+                const double* node_j = nodes_info.get_point(j);
+                if (distance_squared(node_i, node_j) < threshold_sq) {
+                    shape[i]++;
+                }
+            }
+        }
+    }
+    return shape;
+}
+
+
 // BFS optimisé avec deque et early exit
 bool is_graph_connected_bfs(pybind11::array_t<double> nodes, double dist_threshold) {
     ArrayInfo nodes_info(nodes);
@@ -190,10 +215,12 @@ std::vector<pybind11::array_t<double>> optimize_nodes_history(
     pybind11::array_t<double> targets, 
     double dist_threshold, 
     double stepsize, 
-    size_t n
+    size_t n,
+    bool failure_stop_enabled = false,
+    bool push_always = true
 ) {
     std::vector<pybind11::array_t<double>> history;
-    history.reserve(n / 10 + 1); // Estimation intelligente de la taille
+    history.reserve(n); // Estimation intelligente de la taille
     
     auto current_nodes = nodes;
     double best_error = cout_graph_p2(current_nodes, targets);
@@ -216,21 +243,28 @@ std::vector<pybind11::array_t<double>> optimize_nodes_history(
                 consecutive_failures = 0;
                 
                 // Ne stocker que certains snapshots pour économiser la mémoire
-                if (i % (n / 100 + 1) == 0 || i == n - 1) {
-                    history.push_back(current_nodes);
-                }
+                // if (i % (n / 100 + 1) == 0 || i == n - 1) {
+                history.push_back(current_nodes);
+                
             } else {
                 ++consecutive_failures;
             }
         } else {
             ++consecutive_failures;
         }
+
         
-        if (consecutive_failures > max_failures) {
+        if (push_always) {
+            history.push_back(current_nodes);
+        }
+        
+        if (failure_stop_enabled && consecutive_failures > max_failures) {
+            // std::cout << "Early stopping due to consecutive failures" << std::endl;
             break;
         }
     }
     
+    // std::cout << "History size: " << history.size() << std::endl;
     return history;
 }
 
@@ -394,6 +428,7 @@ std::vector<std::vector<pybind11::array_t<double>>> optimize_nodes_history_paral
 
     auto worker = [&](size_t thread_id) {
         try {
+            pybind11::gil_scoped_acquire acquire;
             auto history = optimize_nodes_history_native(
                 nodes_native, targets_native, dist_threshold, stepsize, n
             );
@@ -423,6 +458,47 @@ std::vector<std::vector<pybind11::array_t<double>>> optimize_nodes_history_paral
     return all_histories;
 }
 
+
+
+// ===== VERSION PARALLÈLE (ancienne version) =====
+
+std::vector<std::vector<pybind11::array_t<double>>> optimize_nodes_history_parallel_old(
+    pybind11::array_t<double> nodes,
+    pybind11::array_t<double> targets,
+    double dist_threshold,
+    double stepsize,
+    size_t n,
+    size_t n_threads
+) {
+    std::vector<std::vector<pybind11::array_t<double>>> all_histories(n_threads);
+    std::vector<std::thread> threads;
+
+    pybind11::gil_scoped_release release;
+
+    auto worker = [&](size_t thread_id) {
+        try {
+            pybind11::gil_scoped_acquire acquire;
+            // std::cout << "Thread " << thread_id << " start history\n";
+            auto history = optimize_nodes_history(nodes, targets, dist_threshold, stepsize, n);
+            // std::cout << "Thread " << thread_id << " end history\n";
+            all_histories[thread_id] = std::move(history);
+        } catch (const std::exception& e) {
+            std::cout << "Exception in thread " << thread_id << ": " << e.what() << std::endl;
+        }
+    };
+
+    for (size_t i = 0; i < n_threads; ++i) {
+        threads.emplace_back(worker, i);
+    }
+    // std::cout << "All threads launched\n";
+    for (auto& t : threads) {
+        t.join();
+    }
+    // std::cout << "All threads joined\n";
+    return all_histories;
+}
+
+
 // ===== MODULE PYBIND11 =====
 
 PYBIND11_MODULE(graphx, m) {
@@ -434,10 +510,11 @@ PYBIND11_MODULE(graphx, m) {
     m.def("optimize_nodes", &optimize_nodes, "Optimiser les noeuds");
     m.def("optimize_nodes_history", &optimize_nodes_history, "Optimiser les noeuds et garder l'historique");
     m.def("optimize_nodes_history_parallel", &optimize_nodes_history_parallel, "Optimiser les noeuds et garder l'historique en parallèle");
-
-    // ===== FONCTIONS NATIVES =====
-    m.def("cout_graph_p2_native", &cout_graph_p2_native, "Calcul le cout d'un graph");
-    m.def("is_graph_connected_bfs_native", &is_graph_connected_bfs_native, "Vérifie si un graph est connecté");
-    m.def("mutate_nodes_native", &mutate_nodes_native, "Muter les noeuds");
-    m.def("optimize_nodes_history_native", &optimize_nodes_history_native, "Optimiser les noeuds et garder l'historique");
+    m.def("optimize_nodes_history_parallel_old", &optimize_nodes_history_parallel_old, "Optimiser les noeuds et garder l'historique en parallèle (ancienne version)");
+    m.def("get_shape", &get_shape, "Retourne un tuple de la taille du nombre de noeuds, qui représente le nombre de connections de chaque noeud");
+    // // ===== FONCTIONS NATIVES =====
+    // m.def("cout_graph_p2_native", &cout_graph_p2_native, "Calcul le cout d'un graph");
+    // m.def("is_graph_connected_bfs_native", &is_graph_connected_bfs_native, "Vérifie si un graph est connecté");
+    // m.def("mutate_nodes_native", &mutate_nodes_native, "Muter les noeuds");
+    // m.def("optimize_nodes_history_native", &optimize_nodes_history_native, "Optimiser les noeuds et garder l'historique");
 }

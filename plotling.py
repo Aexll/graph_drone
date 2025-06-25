@@ -6,7 +6,9 @@ import time
 import matplotlib.animation as animation
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from PIL import Image
-    
+
+
+
 
 # for a single graph history
 def plot_history_gif(history, targets, save_path, gif_name="history.gif", dist_threshold=1.1, scale_nodes=10, steps_per_frame=1):
@@ -286,15 +288,19 @@ if __name__ == "__main__":
 
 
 
-    results, histories = ec.multicalc_optimal_graph(targets, dist_threshold, ec.cout_snt, 2, 
-        ngraphs=100, 
-        steps=10000, 
-        mutation_stepsize=0.01,
-        sampling_size=1,
-        use_genetic_sampling=True,
-    )
-    # plot_history_trace(histories[0], targets, "results/history/trace.png",steps_per_frame=30)
-    # plot_history_trace_tilemap(histories, targets, "results/history/tilemap.png",sorted_by_error=True)
+    # results, histories = ec.multicalc_optimal_graph(targets, dist_threshold, ec.cout_snt, 2, 
+    #     ngraphs=100, 
+    #     steps=10000, 
+    #     mutation_stepsize=0.01,
+    #     sampling_size=1,
+    #     use_genetic_sampling=True,
+    # )
+    # # plot_history_trace(histories[0], targets, "results/history/trace.png",steps_per_frame=30)
+    # # plot_history_trace_tilemap(histories, targets, "results/history/tilemap.png",sorted_by_error=True)
+
+    import
+
+
     plot_history_gif_tilemap(histories, targets, "results/history/gif","tilemap.gif",sorted_by_error=True,steps_per_frame=100,show_trace=False)
 
 

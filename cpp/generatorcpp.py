@@ -72,24 +72,28 @@ def generate_and_plot(
     show_plot=True
 ):
     print("targets", targets)
-    results, histories = ec.multicalc_optimal_graph(
-        targets, dist_threshold, ec.cout_snt, expo,
-        ngraphs=ngraphs,
-        steps=steps,
-        mutation_stepsize=mutation_stepsize,
-        sampling_size=sampling_size,
-        use_genetic_sampling=use_genetic_sampling
-    )
-    errors = np.array([ec.cout_snt(result, targets) for result in results])
+    # results, histories = ec.multicalc_optimal_graph(
+    #     targets, dist_threshold, ec.cout_snt, expo,
+    #     ngraphs=ngraphs,
+    #     steps=steps,
+    #     mutation_stepsize=mutation_stepsize,
+    #     sampling_size=sampling_size,
+    #     use_genetic_sampling=use_genetic_sampling
+    # )
+    nodes = np.array([[np.mean(targets[:, 0]), np.mean(targets[:, 1])]] * len(targets))
+    results = gx.optimize_nodes_history_parallel_old(nodes, targets, dist_threshold, mutation_stepsize, steps, ngraphs)
+    # Use the last element of each history as the final result
+    final_results = [history[-1] for history in results]
+    errors = np.array([ec.cout_snt(result, targets) for result in final_results])
     if save_npz:
-        np.savez(f"{save_prefix}.npz", results=results, targets=targets, errors=errors)
+        np.savez(f"{save_prefix}.npz", results=final_results, targets=targets, errors=errors)
         print(f"Résultats sauvegardés dans {save_prefix}.npz")
     norm = mcolors.Normalize(vmin=errors.min(), vmax=errors.max())
     cmap = plt.colormaps['viridis']
     colors = [cmap(norm(error)) for error in errors]
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 10), gridspec_kw={'height_ratios': [3, 1]})
     ax1.scatter(targets[:, 0], targets[:, 1], label='Targets', color='red')
-    for result, color in zip(results, colors):
+    for result, color in zip(final_results, colors):
         ax1.scatter(result[:, 0], result[:, 1], color=color, s=scale_nodes)
     sm = cm.ScalarMappable(cmap=cmap, norm=norm)
     fig.colorbar(sm, ax=ax1, label='Error')
@@ -127,9 +131,9 @@ if __name__ == "__main__":
 
     generate_and_plot(
         targets=targets,
-        ngraphs=100,
-        steps=1000,
-        mutation_stepsize=0.01,
+        ngraphs=10,
+        steps=1000000,
+        mutation_stepsize=0.1,
         sampling_size=10,
         use_genetic_sampling=True,
         scale_nodes=10,
@@ -141,17 +145,17 @@ if __name__ == "__main__":
         show_plot=True
     )    
     
-    generate_and_plot(
-        targets=targets,
-        ngraphs=100,
-        steps=10000,
-        mutation_stepsize=0.01,
-        sampling_size=1,
-        use_genetic_sampling=True,
-        scale_nodes=10,
-        dist_threshold=1.1,
-        save_prefix=f"results7_N2",
-        expo=2,
-        save_png=False,
-        show_plot=False
-    )
+    # generate_and_plot(
+    #     targets=targets,
+    #     ngraphs=100,
+    #     steps=10000,
+    #     mutation_stepsize=0.01,
+    #     sampling_size=1,
+    #     use_genetic_sampling=True,
+    #     scale_nodes=10,
+    #     dist_threshold=1.1,
+    #     save_prefix=f"results7_N2",
+    #     expo=2,
+    #     save_png=False,
+    #     show_plot=False
+    # )
