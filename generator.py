@@ -29,10 +29,12 @@ def generate_targets(nb_nodes, box_size):
 targets = np.array([
     np.array([0,0]),
     np.array([3,0]),
-    np.array([0,3]),
-    np.array([3,4]),
     np.array([0,4]),
-    np.array([4,0]),
+    np.array([2,1]),
+    np.array([2.3,3.2]),
+    np.array([4,1]),
+    np.array([1,2.5]),
+    np.array([3.5,5]),
     ]).astype(np.float32)
 
 
@@ -62,11 +64,15 @@ def generate_and_plot(
     use_genetic_sampling=True,
     scale_nodes=10,
     dist_threshold=1.1,
-    save_prefix="results"
+    save_prefix="results",
+    expo=2,
+    save_npz=True,
+    save_png=True,
+    show_plot=True
 ):
     print("targets", targets)
-    results = ec.multicalc_optimal_graph(
-        targets, dist_threshold, ec.cout_snt, 2,
+    results, histories = ec.multicalc_optimal_graph(
+        targets, dist_threshold, ec.cout_snt, expo,
         ngraphs=ngraphs,
         steps=steps,
         mutation_stepsize=mutation_stepsize,
@@ -74,9 +80,9 @@ def generate_and_plot(
         use_genetic_sampling=use_genetic_sampling
     )
     errors = np.array([ec.cout_snt(result, targets) for result in results])
-    print("errors", errors)
-    np.savez(f"{save_prefix}.npz", results=results, targets=targets, errors=errors)
-    print(f"Résultats sauvegardés dans {save_prefix}.npz")
+    if save_npz:
+        np.savez(f"{save_prefix}.npz", results=results, targets=targets, errors=errors)
+        print(f"Résultats sauvegardés dans {save_prefix}.npz")
     norm = mcolors.Normalize(vmin=errors.min(), vmax=errors.max())
     cmap = plt.colormaps['viridis']
     colors = [cmap(norm(error)) for error in errors]
@@ -92,36 +98,59 @@ def generate_and_plot(
     ax2.set_ylabel('Count')
     ax2.set_title('Histogramme des erreurs')
     plt.tight_layout()
-    plt.savefig(f"{save_prefix}.png")
-    print(f"Figure sauvegardée dans {save_prefix}.png")
-    plt.close(fig)
+    if show_plot:
+        plt.show()
+    if save_png:
+        plt.savefig(f"{save_prefix}.png")
+        print(f"Figure sauvegardée dans {save_prefix}.png")
+        plt.close(fig)
+
+
 
 # Exemple d'utilisation :
 if __name__ == "__main__":
     # targets = generate_targets(6, 10)
-    targets = np.array([
-        np.array([0,0]),
-        np.array([3,0]),
-        np.array([0,3]),
-        np.array([3,4]),
-        np.array([3.2,3.4]),
-        np.array([1.5,2.2]),
-        np.array([2.5,2.2]),
-    ]).astype(np.float32)
+    # targets = np.array([
+    #     np.array([0,0]),
+    #     np.array([3,0]),
+    #     np.array([0,3]),
+    #     np.array([3,4]),
+    #     np.array([3.2,3.4]),
+    #     np.array([1.5,2.2]),
+    #     np.array([3.8,1.2]),
+    # ]).astype(np.float32)
+
+    # targets = generate_targets(4,10)
 
 
 
-
-    for i in range(1,5):
-        print(f"Running for stepsize {i*0.1}")
-        generate_and_plot(
-            targets=targets,
-            ngraphs=100,
-            steps=10000 + i*10000,
-            mutation_stepsize=0.01,
-            sampling_size=1,
-            use_genetic_sampling=True,
-            scale_nodes=10,
-            dist_threshold=1.1,
-            save_prefix=f"results4_stepsize{i*0.1}"
-        )
+    generate_and_plot(
+        targets=targets,
+        ngraphs=100,
+        steps=1000,
+        mutation_stepsize=0.01,
+        sampling_size=10,
+        use_genetic_sampling=True,
+        scale_nodes=10,
+        dist_threshold=1.1,
+        save_prefix=f"results7_N1",
+        expo=1,
+        save_npz=False,
+        save_png=False,
+        show_plot=True
+    )    
+    
+    generate_and_plot(
+        targets=targets,
+        ngraphs=100,
+        steps=10000,
+        mutation_stepsize=0.01,
+        sampling_size=1,
+        use_genetic_sampling=True,
+        scale_nodes=10,
+        dist_threshold=1.1,
+        save_prefix=f"results7_N2",
+        expo=2,
+        save_png=False,
+        show_plot=False
+    )

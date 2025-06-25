@@ -3,6 +3,7 @@ import multiprocessing as mp
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
+import networkx as nx
 
 
 """
@@ -112,6 +113,21 @@ def is_graph_connected(nodes, dist_threshold):
                 queue.append(neighbor)
     return visited.all()
 
+def is_graph_connected_nx(nodes, dist_threshold):
+    graph = nodes_to_matrix(nodes, dist_threshold)
+    G = nx.from_numpy_array(graph)
+    return nx.is_connected(G)
+
+
+# print(is_graph_connected_nx(np.array([[0,0],[1,0],[0,1],[1,1]]), 1.1))
+
+
+
+
+
+
+
+
 # Erreur
 
 
@@ -168,6 +184,7 @@ def calc_optimal_graph(targets, dist_threshold, cost_function, cost_power, steps
     barycenter = np.mean(targets, axis=0)
     nodes = np.full((len(targets), 2), barycenter).astype(np.float32)
     error = error_function_wrapper(nodes, targets, dist_threshold, cost_function, cost_power)
+    history = []
     for i in range(steps):
         if use_genetic_sampling:
             nodes, error = mutate_nodes_genetic_sampling(
@@ -175,12 +192,14 @@ def calc_optimal_graph(targets, dist_threshold, cost_function, cost_power, steps
                 error_function=lambda n, t: error_function_wrapper(n, t, dist_threshold, cost_function, cost_power),
                 sampling_size=sampling_size
             )
+            history.append(nodes)
         else:
             nodes, error = mutate_nodes(
                 nodes, targets, error, stepsize=(1-i/steps)*mutation_stepsize,
                 error_function=lambda n, t: error_function_wrapper(n, t, dist_threshold, cost_function, cost_power)
             )
-    return nodes
+            history.append(nodes)
+    return nodes, history
 
 
 
@@ -193,6 +212,7 @@ def worker_init(targets):
 
 def calc_optimal_graph_worker(dist_threshold, cost_function, cost_power, steps, mutation_stepsize, sampling_size, use_genetic_sampling):
     global global_targets
+    # print(global_targets)
     return calc_optimal_graph(global_targets, dist_threshold, cost_function, cost_power, steps, mutation_stepsize, sampling_size, use_genetic_sampling)
 
 
@@ -206,16 +226,67 @@ def calc_optimal_graph_worker(dist_threshold, cost_function, cost_power, steps, 
 def multicalc_optimal_graph(targets, dist_threshold, cost_function, cost_power, ngraphs=1000, steps=10000, mutation_stepsize=1.0, sampling_size=10, use_genetic_sampling=False):
     with mp.Pool(ngraphs, initializer=worker_init, initargs=(targets,)) as pool:
         args = [(dist_threshold, cost_function, cost_power, steps, mutation_stepsize, sampling_size, use_genetic_sampling) for _ in range(ngraphs)]
-        results = pool.starmap(calc_optimal_graph_worker, args)
-    return results
+        results, histories = zip(*pool.starmap(calc_optimal_graph_worker, args))
+    return results, histories
 
 
 
+#                         _   _              _                  _ _   _                   
+#                        | | (_)            | |                (_) | | |                  
+#    __ _  ___ _ __   ___| |_ _  ___    __ _| | __ _  ___  _ __ _| |_| |__  _ __ ___  ___ 
+#   / _` |/ _ \ '_ \ / _ \ __| |/ __|  / _` | |/ _` |/ _ \| '__| | __| '_ \| '_ ` _ \/ __|
+#  | (_| |  __/ | | |  __/ |_| | (__  | (_| | | (_| | (_) | |  | | |_| | | | | | | | \__ \
+#   \__, |\___|_| |_|\___|\__|_|\___|  \__,_|_|\__, |\___/|_|  |_|\__|_| |_|_| |_| |_|___/
+#    __/ |                                      __/ |                                     
+#   |___/                                      |___/                                      
+
+                         
+
+def mutate_nodes_geneticaly(nodes, stepsize, steps, dist_threshold):
+    """
+    retournes un nouveau set de noeuds ayant leurs positions modifiées aléatoirement.
+    sur plusieurs pas de temps.
+    """
+    for i in range(steps):
+        new_nodes = nodes + np.random.uniform(-stepsize, stepsize, nodes.shape).astype(np.float32)
+        connected = is_graph_connected(new_nodes, dist_threshold)
+        if connected:
+            nodes = new_nodes
+        else:
+            continue
+    return nodes
+
+def sort_kill_reproduce(nodes, targets, dist_threshold, cost_function, cost_power, keep_best=10):
+    """
+    sort les noeuds par erreur, tués les plus mauvais et reproduit les meilleurs.
+    """
+    sorted_nodes = sorted(nodes, key=lambda x: cost_function(x, targets, cost_power))
+    sorted_nodes = sorted_nodes[:keep_best]
+    sorted_nodes = reproduce(sorted_nodes, len(nodes))
+    return sorted_nodes
 
 
+def reproduce(nodes, wanted_size):
+    """
+    Prend des éléments de nodes et les duplique pour obtenir wanted_size noeuds.
+    """
+    nodes = np.asarray(nodes)
+    n_current = len(nodes)
+    n_to_add = wanted_size - n_current
+    if n_to_add <= 0:
+        return nodes[:wanted_size]
+    # Choisir aléatoirement des indices à dupliquer
+    indices = np.random.choice(n_current, size=n_to_add, replace=True)
+    new_nodes = nodes[indices]
+    return np.concatenate([nodes, new_nodes], axis=0)
 
 
-MATPLOTLIB = False
+# print(reproduce(np.array([[0,0],[1,0],[0,1],[1,1]]), 12))
+
+# quit()
+
+
+MATPLOTLIB = True
 
 
 
@@ -256,7 +327,7 @@ if __name__ == "__main__" and MATPLOTLIB:
     import time
 
     start_time = time.time()
-    results = multicalc_optimal_graph(targets, dist_threshold, cout_snt, 2, 
+    results, history = multicalc_optimal_graph(targets, dist_threshold, cout_snt, 2, 
     ngraphs=NGRAPHS, 
     steps=STEPS, 
     mutation_stepsize=MUTATION_STEPSIZE,
@@ -265,18 +336,9 @@ if __name__ == "__main__" and MATPLOTLIB:
     )
     end_time = time.time()
     print(f"Temps d'exécution: {end_time - start_time} secondes")
-    # print("results", results)
+    # print("history", history)
     errors = [cout_snt(result, targets) for result in results]
-    print("errors", errors)
     # print("errors", errors)
-    
-    # # display the graph
-    # import matplotlib.pyplot as plt
-    # plt.scatter(nodes[:, 0], nodes[:, 1])
-    # # plt.scatter(targets[:, 0], targets[:, 1])
-    # for result in results:
-    #     plt.scatter(result[:, 0], result[:, 1])
-    # plt.show()
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 10), gridspec_kw={'height_ratios': [3, 1]})
     # ax1.scatter(nodes[:, 0], nodes[:, 1], label='Initial nodes', color='black')
