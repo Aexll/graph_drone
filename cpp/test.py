@@ -82,9 +82,15 @@ nodes_shaped_121 = np.array([[0,0],[1,0],[2,0]])
 print("shape of (1,2,1) :", gx.get_shape(nodes_shaped_121, dist_threshold))
 nodes_shaped_1311 = np.array([[0,0],[1,0],[2,0],[1,1]])
 print("shape of (1,3,1,1) :", gx.get_shape(nodes_shaped_1311, dist_threshold))
-nodes_shaped_1222 = np.array([[0,0],[1,0],[2,0],[3,0]])
-print("shape of (1,2,2,2) :", gx.get_shape(nodes_shaped_1222, dist_threshold))
+nodes_shaped_1221 = np.array([[0,0],[1,0],[2,0],[3,0]])
+print("shape of (1,2,2,1) :", gx.get_shape(nodes_shaped_1221, dist_threshold))
+
+print("shape of (1,2,1) :", gx.get_shape_string(gx.get_shape(nodes_shaped_121, dist_threshold)))
+print("shape of (1,3,1,1) :", gx.get_shape_string(gx.get_shape(nodes_shaped_1311, dist_threshold)))
+print("shape of (1,2,2,1) :", gx.get_shape_string(gx.get_shape(nodes_shaped_1221, dist_threshold)))
 
 print("shape of optimized : ", gx.get_shape(opti_1, dist_threshold))
+print("shape of optimized string : ", gx.get_shape_string(gx.get_shape(opti_1, dist_threshold)))
 
-print("distance between (1,3,1,1) and (1,2,2,2) :", gx.get_shape_distance(gx.get_shape(nodes_shaped_1311, dist_threshold), gx.get_shape(nodes_shaped_1222, dist_threshold)))
+print("distance between (1,3,1,1) and (1,2,2,1) :", 
+gx.get_shape_distance(gx.get_shape(nodes_shaped_1311, dist_threshold), gx.get_shape(nodes_shaped_1221, dist_threshold)))

@@ -313,7 +313,7 @@ def shape_histogram(shapes):
     plt.show()
 
 
-def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, save_path=None, scale_nodes=20, figsize_per_row=(7, 4)):
+def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, save_path=None, scale_nodes=20, figsize_per_row=(7, 4), n_bins=20):
     """
     Affiche toutes les formes dans une seule grande figure :
       - chaque ligne = une forme
@@ -332,7 +332,7 @@ def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold,
     # Collecte des infos pour chaque historique
     graph_infos = []
     for graph in graphs:
-        shape = tuple(gx.get_shape(graph, dist_threshold))
+        shape = gx.get_shape_string(gx.get_shape(graph, dist_threshold))
         error = ec.cout_snt(graph, targets)
         graph_infos.append({'nodes': graph, 'shape': shape, 'error': error})
 
@@ -341,6 +341,10 @@ def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold,
     shape_to_graphs = defaultdict(list)
     for info in graph_infos:
         shape_to_graphs[info['shape']].append(info)
+
+    # sort shapes by error
+    for shape_list in shape_to_graphs.values():
+        shape_list.sort(key=lambda x: x['error'])
 
     n_shapes = len(shape_to_graphs)
     if n_shapes == 0:
@@ -352,7 +356,11 @@ def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold,
     fig = plt.figure(figsize=figsize)
     gs = fig.add_gridspec(n_shapes, 2, width_ratios=[1, 2], wspace=0.3, hspace=0.4)
 
-    for row_idx, (shape, graphs) in enumerate(shape_to_graphs.items()):
+    # sort shapes by error
+    shape_to_graphs_item_sorted = sorted(shape_to_graphs.items(), key=lambda x: x[1][0]['error'])
+
+
+    for row_idx, (shape, graphs) in enumerate(shape_to_graphs_item_sorted):
         errors = [g['error'] for g in graphs]
         best_idx = int(np.argmin(errors))
         best_graph = graphs[best_idx]['nodes']
@@ -381,7 +389,8 @@ def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold,
             all_errors = [g['error'] for graphs in shape_to_graphs.values() for g in graphs]
             min_error = min(all_errors)
             max_error = max(all_errors)
-            n_bins = 20  # ou ajuster selon besoin
+            min_number_of_graphs = 0
+            max_number_of_graphs = max(len(graphs) for graphs in shape_to_graphs.values())
             bins = np.linspace(min_error, max_error, n_bins + 1)
         ax_hist = fig.add_subplot(gs[row_idx, 1])
         ax_hist.hist(errors, bins=bins, color='#03A9F4', edgecolor='black')
@@ -389,6 +398,7 @@ def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold,
         ax_hist.set_ylabel("Nombre de graphes")
         ax_hist.set_title("Histogramme des erreurs")
         ax_hist.set_xlim(min_error, max_error)
+        ax_hist.set_ylim(min_number_of_graphs, max_number_of_graphs)
 
     plt.tight_layout()
     if save_path is not None:
@@ -497,8 +507,9 @@ if __name__ == "__main__":
 
 
     # parallel tilemap
-    graphs = gx.optimize_nodes_parallel(nodes, targets, dist_threshold, 0.01, 100000,100)
-    plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, "results/history/shapes_4", scale_nodes=20)
+    graphs = gx.optimize_nodes_parallel(nodes, targets, dist_threshold, 0.1, 100000,1000,False)
+    print("now plotting...")
+    plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, "results/history/shapes_6", scale_nodes=20, n_bins=50)
 
 
 

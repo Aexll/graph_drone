@@ -7,6 +7,10 @@
 #include <iostream>
 #include <deque>
 #include <algorithm>
+#include <set>
+#include <sstream>
+#include <vector>
+#include <string>
 
 
 
@@ -400,49 +404,89 @@ std::vector<std::vector<pybind11::array_t<double>>> optimize_nodes_history_paral
 
 
 /*
-Retourne un tuple de la taille du nombre de noeuds, qui représente le nombre de connections de chaque noeud
-(l'indice de la liste correspond au noeud et la valeur à son nombre de connections)
+Retourne un tuple des connections de chaque noeud
 */
 pybind11::tuple get_shape(pybind11::array_t<double> nodes, double dist_threshold) {
     ArrayInfo nodes_info(nodes);
-    std::vector<size_t> shape(nodes_info.n, 0);
+    std::vector<std::pair<size_t, size_t>> edges;
     const double threshold_sq = dist_threshold * dist_threshold;
-    
     for (size_t i = 0; i < nodes_info.n; ++i) {
         const double* node_i = nodes_info.get_point(i);
-        for (size_t j = 0; j < nodes_info.n; ++j) {
-            if (i != j) {  // Un nœud ne se connecte pas à lui-même
-                const double* node_j = nodes_info.get_point(j);
-                if (distance_squared(node_i, node_j) < threshold_sq) {
-                    shape[i]++;
-                }
+        for (size_t j = i + 1; j < nodes_info.n; ++j) { // j > i pour éviter les doublons
+            const double* node_j = nodes_info.get_point(j);
+            if (distance_squared(node_i, node_j) < threshold_sq) {
+                edges.emplace_back(i, j);
             }
         }
     }
-    return pybind11::tuple(pybind11::cast(shape));
+    std::sort(edges.begin(), edges.end());
+    // Conversion en tuple de tuples pour Python
+    pybind11::list edge_list;
+    for (const auto& e : edges) {
+        edge_list.append(pybind11::make_tuple(e.first, e.second));
+    }
+    return pybind11::tuple(edge_list);
 }
 
 
 /*
-Retourne la distance entre deux formes, la distance est le nombre d'étapes nécessaires 
-pour passer de la forme 1 à la forme 2
-est considéré comme une étape :
-retirer une connexion entre deux noeuds
-ajouter une connexion entre deux noeuds
+Retourne la distance entre deux formes (tuple d'arêtes),
+c'est-à-dire le nombre d'arêtes différentes entre les deux graphes.
 */
 int get_shape_distance(pybind11::tuple shape1, pybind11::tuple shape2) {
-    std::vector<ssize_t> shape1_vec = pybind11::cast<std::vector<ssize_t>>(shape1);
-    std::vector<ssize_t> shape2_vec = pybind11::cast<std::vector<ssize_t>>(shape2);
+    std::set<std::pair<size_t, size_t>> set1, set2;
+    for (auto item : shape1) {
+        auto t = pybind11::cast<pybind11::tuple>(item);
+        set1.emplace(pybind11::cast<size_t>(t[0]), pybind11::cast<size_t>(t[1]));
+    }
+    for (auto item : shape2) {
+        auto t = pybind11::cast<pybind11::tuple>(item);
+        set2.emplace(pybind11::cast<size_t>(t[0]), pybind11::cast<size_t>(t[1]));
+    }
+    // Distance = taille de la différence symétrique
+    std::vector<std::pair<size_t, size_t>> diff;
+    std::set_symmetric_difference(
+        set1.begin(), set1.end(),
+        set2.begin(), set2.end(),
+        std::back_inserter(diff)
+    );
+    return static_cast<int>(diff.size());
+}
 
-    if (shape1_vec.size() != shape2_vec.size()) {
-        throw std::runtime_error("Shapes must have the same length");
+
+std::string get_shape_string(pybind11::tuple shape) {
+    // Trouver le nombre de noeuds (max index + 1)
+    size_t n = 0;
+    std::vector<std::vector<size_t>> neighbors;
+    for (auto item : shape) {
+        auto t = pybind11::cast<pybind11::tuple>(item);
+        size_t i = pybind11::cast<size_t>(t[0]);
+        size_t j = pybind11::cast<size_t>(t[1]);
+        n = std::max(n, std::max(i, j) + 1);
+    }
+    neighbors.resize(n);
+
+    // Remplir les voisins d'index strictement supérieur
+    for (auto item : shape) {
+        auto t = pybind11::cast<pybind11::tuple>(item);
+        size_t i = pybind11::cast<size_t>(t[0]);
+        size_t j = pybind11::cast<size_t>(t[1]);
+        if (j > i) {
+            neighbors[i].push_back(j);
+        }
+        // Si tu veux aussi les voisins inférieurs, tu pourrais ajouter : neighbors[j].push_back(i);
     }
 
-    int distance = 0;
-    for (size_t i = 0; i < shape1_vec.size(); i++) {
-        distance += std::abs(shape1_vec[i] - shape2_vec[i]);
+    // Construire la string
+    std::stringstream ss;
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t k = 0; k < neighbors[i].size(); ++k) {
+            if (k > 0) ss << '\'';
+            ss << neighbors[i][k];
+        }
+        if (i < n - 1) ss << ',';
     }
-    return distance;
+    return ss.str();
 }
 
 
@@ -460,7 +504,5 @@ PYBIND11_MODULE(graphx, m) {
     m.def("get_shape", &get_shape, "Retourne un tuple de la taille du nombre de noeuds, qui représente le nombre de connections de chaque noeud");
     m.def("optimize_nodes_parallel", &optimize_nodes_parallel, "Optimiser les noeuds en parallèle");
     m.def("get_shape_distance", &get_shape_distance, "Retourne la distance entre deux formes");
-
-
-
+    m.def("get_shape_string", &get_shape_string, "Retourne la représentation sous forme de chaîne de caractères d'un tuple de connections");
 }
