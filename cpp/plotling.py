@@ -6,7 +6,8 @@ import time
 import matplotlib.animation as animation
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from PIL import Image
-
+import networkx as nx
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 
 
@@ -313,7 +314,17 @@ def shape_histogram(shapes):
     plt.show()
 
 
-def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, save_path=None, scale_nodes=20, figsize_per_row=(7, 4), n_bins=20):
+def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, save_path=None, scale_nodes=20, figsize_per_row=(7, 4), 
+    n_bins=20, 
+    multicolor_nodes=False, 
+    target_marker='x',
+    target_color=(1,0,0,0.3),
+    target_scale=10,
+    node_use_cmap=False,
+    node_cmap='Spectral',
+    node_marker='o',
+    target_same_color=False,
+    ):
     """
     Affiche toutes les formes dans une seule grande figure :
       - chaque ligne = une forme
@@ -364,17 +375,25 @@ def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold,
         errors = [g['error'] for g in graphs]
         best_idx = int(np.argmin(errors))
         best_graph = graphs[best_idx]['nodes']
+        n_nodes = targets.shape[0]
+        hsv_colors = [plt.get_cmap(node_cmap)(i / n_nodes) for i in range(n_nodes)] 
+        colors = [tuple(c for c in color[:3]) for color in hsv_colors]
 
         # Partie gauche : image du meilleur graphe
         ax_img = fig.add_subplot(gs[row_idx, 0])
-        ax_img.scatter(targets[:, 0], targets[:, 1], color='red', zorder=3)
+        if target_same_color:
+            ax_img.scatter(targets[:, 0], targets[:, 1], color=colors, zorder=3,marker=target_marker,s=target_scale)
+        else:
+            ax_img.scatter(targets[:, 0], targets[:, 1], color='red', zorder=3,marker=target_marker,s=target_scale)
         adj = ec.nodes_to_matrix(best_graph, dist_threshold)
-        n_nodes = targets.shape[0]
         for i1 in range(n_nodes):
             for j1 in range(i1+1, n_nodes):
                 if adj[i1, j1] == 1:
                     ax_img.plot([best_graph[i1, 0], best_graph[j1, 0]], [best_graph[i1, 1], best_graph[j1, 1]], color='gray', linewidth=1, zorder=1)
-        ax_img.scatter(best_graph[:, 0], best_graph[:, 1], color='blue', s=scale_nodes, zorder=4)
+        if not node_use_cmap:
+            ax_img.scatter(best_graph[:, 0], best_graph[:, 1], color='blue', s=scale_nodes, zorder=4,marker=node_marker)
+        else:
+            ax_img.scatter(best_graph[:, 0], best_graph[:, 1], color=colors, s=scale_nodes, zorder=4,marker=node_marker,edgecolors='black',linewidths=0.2)
         ax_img.set_xlim(targets[:, 0].min() - 1, targets[:, 0].max() + 1)
         ax_img.set_ylim(targets[:, 1].min() - 1, targets[:, 1].max() + 1)
         ax_img.set_aspect('equal')
@@ -409,6 +428,188 @@ def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold,
     plt.close(fig)
 
 
+def shape_evolution_plot(history, targets, dist_threshold, save_path=None, scale_nodes=20, figsize_per_shape=(4, 4), show_error=True, only_first_occurrence=True):
+    """
+    Affiche l'évolution des shapes d'un historique de graphes :
+      - chaque colonne = une shape rencontrée (dans l'ordre d'apparition ou d'amélioration)
+      - pour chaque shape, affiche le graphe correspondant (meilleur ou premier)
+      - en dessous, le nom de la shape et l'erreur
+    """
+    import graphx as gx # type: ignore
+    import errorcalc as ec
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import os
+
+    n_steps = len(history)
+    n_nodes = targets.shape[0]
+
+    # Pour chaque étape, calcule la shape et l'erreur
+    step_infos = []
+    for i, nodes in enumerate(history):
+        shape = gx.get_shape_string(gx.get_shape(nodes, dist_threshold))
+        error = ec.cout_snt(nodes, targets)
+        step_infos.append({'step': i, 'nodes': nodes, 'shape': shape, 'error': error})
+
+    # Sélectionne pour chaque shape la meilleure (ou la première)
+    shape_to_info = {}
+    for info in step_infos:
+        shape = info['shape']
+        if shape not in shape_to_info:
+            shape_to_info[shape] = info
+        elif not only_first_occurrence:
+            # Si on veut la meilleure, on garde celle avec l'erreur minimale
+            if info['error'] < shape_to_info[shape]['error']:
+                shape_to_info[shape] = info
+
+    # Trie les shapes par ordre d'apparition (ou d'amélioration)
+    ordered_shapes = []
+    seen = set()
+    for info in step_infos:
+        shape = info['shape']
+        if shape not in seen and shape in shape_to_info:
+            ordered_shapes.append(shape)
+            seen.add(shape)
+
+    n_shapes = len(ordered_shapes)
+    if n_shapes == 0:
+        print("Aucune forme trouvée dans l'historique.")
+        return
+
+    figsize = (figsize_per_shape[0] * n_shapes, figsize_per_shape[1])
+    fig, axes = plt.subplots(1, n_shapes, figsize=figsize, squeeze=False)
+    axes = axes[0]  # 1D array
+
+    for idx, shape in enumerate(ordered_shapes):
+        info = shape_to_info[shape]
+        nodes = info['nodes']
+        error = info['error']
+        ax = axes[idx]
+        # Affichage des cibles
+        ax.scatter(targets[:, 0], targets[:, 1], color='red', zorder=3, label='Targets')
+        # Affichage des arêtes
+        adj = ec.nodes_to_matrix(nodes, dist_threshold)
+        for i in range(n_nodes):
+            for j in range(i+1, n_nodes):
+                if adj[i, j] == 1:
+                    ax.plot([nodes[i, 0], nodes[j, 0]], [nodes[i, 1], nodes[j, 1]], color='gray', linewidth=1, zorder=1)
+        # Affichage des noeuds
+        ax.scatter(nodes[:, 0], nodes[:, 1], color='blue', s=scale_nodes, zorder=4)
+        ax.set_xlim(targets[:, 0].min() - 1, targets[:, 0].max() + 1)
+        ax.set_ylim(targets[:, 1].min() - 1, targets[:, 1].max() + 1)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        # Titre avec shape et erreur
+        title = f"Shape: {shape}"
+        if show_error:
+            title += f"\nErreur: {error:.2f}"
+        ax.set_title(title, fontsize=10)
+
+    plt.tight_layout()
+    if save_path is not None:
+        os.makedirs(save_path, exist_ok=True)
+        fname = os.path.join(save_path, f"shape_evolution.png")
+        plt.savefig(fname, bbox_inches='tight')
+        print(f"Frise des shapes sauvegardée dans {fname}")
+    plt.show()
+    plt.close(fig)
+
+
+
+
+
+# def draw_shape_graph(ax, nodes, adj, node_color='blue', target_color='red', scale_nodes=20):
+#     # Dessine un petit graphe sur un axe donné
+#     ax.scatter(nodes[:, 0], nodes[:, 1], color=target_color, zorder=3)
+#     n_nodes = nodes.shape[0]
+#     for i in range(n_nodes):
+#         for j in range(i+1, n_nodes):
+#             if adj[i, j] == 1:
+#                 ax.plot([nodes[i, 0], nodes[j, 0]], [nodes[i, 1], nodes[j, 1]], color='gray', linewidth=1, zorder=1)
+#     ax.scatter(nodes[:, 0], nodes[:, 1], color=node_color, s=scale_nodes, zorder=4)
+#     ax.axis('off')
+#     ax.set_aspect('equal')
+
+def draw_mini_graph(ax, nodes, targets, dist_threshold, size=1.5, scale_nodes=20, scale_targets=20, offset=0.2):
+    import graphx as gx # type: ignore
+    adj = gx.get_adjacency_matrix(nodes, dist_threshold)
+    for i in range(nodes.shape[0]):
+        for j in range(i+1, nodes.shape[0]):
+            if adj[i, j] == 1:
+                ax.plot([nodes[i, 0], nodes[j, 0]], [nodes[i, 1], nodes[j, 1]], color='gray', linewidth=1, zorder=1)
+    ax.scatter(nodes[:, 0], nodes[:, 1], color='blue', s=scale_nodes, zorder=4)
+    ax.scatter(targets[:, 0], targets[:, 1], color='red', zorder=3, s=scale_targets)
+    ax.set_xlim(targets[:, 0].min() - offset, targets[:, 0].max() + offset)
+    ax.set_ylim(targets[:, 1].min() - offset, targets[:, 1].max() + offset)
+    ax.axis('off')
+    ax.set_aspect('equal')
+
+def get_graph_image(nodes, targets, dist_threshold, size=1.5):
+    # Crée une image matplotlib du graphe et la retourne comme array
+    fig, ax = plt.subplots(figsize=(size, size))
+    draw_mini_graph(ax, nodes, targets, dist_threshold)
+    fig.canvas.draw()
+    image = np.frombuffer(fig.canvas.tostring_argb(), dtype='uint8') # type: ignore
+    image = image.reshape(fig.canvas.get_width_height()[::-1] + (4,))
+    # Convert ARGB to RGBA for matplotlib OffsetImage
+    image = image[:, :, [1, 2, 3, 0]]  # ARGB -> RGBA
+    plt.close(fig)
+    return image
+
+def plot_shape_transition_graph_with_mini_graphs(graphs_histories, targets, dist_threshold, shapes_dict=None, figsize=(12, 8), mini_graph_size=1, mini_graph_zoom=0.5, seed=42, spring_k=2.0):
+    """
+    Construit et affiche le graphe dirigé des transitions de shapes, avec pour chaque noeud une miniature du graphe correspondant (meilleur score).
+    - graphs_histories : liste d'historiques de graphes (list of list of np.ndarray)
+    - targets : positions cibles
+    - dist_threshold : seuil de distance pour les arêtes
+    - shapes_dict : dictionnaire optionnel {shape_key: {'graph': nodes, 'score': float}}
+    - spring_k : paramètre d'espacement du layout spring_layout (plus grand = plus espacé)
+    """
+    import graphx as gx # type: ignore
+    import networkx as nx
+    from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    # Compute all transitions from each graph's history
+    full_transitions = set()
+    shapes = {} if shapes_dict is None else dict(shapes_dict)
+    for graph_history in graphs_histories:
+        full_transitions.update(gx.get_shape_string_transition_history(graph_history, dist_threshold))
+        new_shapes = gx.decompose_history_by_shape(graph_history, targets, dist_threshold)
+        for shape_key in new_shapes.keys():
+            if shape_key not in shapes:
+                shapes[shape_key] = new_shapes[shape_key]
+            else:
+                if new_shapes[shape_key]['score'] < shapes[shape_key]['score']:
+                    shapes[shape_key] = new_shapes[shape_key]
+
+    # Build a directed graph from the transitions
+    G = nx.DiGraph()
+    for from_shape, to_shape in full_transitions:
+        G.add_edge(from_shape, to_shape)
+
+    # Draw the graph
+    fig, ax = plt.subplots(figsize=figsize)
+    pos = nx.spring_layout(G, seed=seed, k=spring_k)
+    nx.draw(G, pos, with_labels=False, node_size=2000, node_color='white', ax=ax, edge_color='gray', arrowsize=20)
+
+    for shape_key, (node, (x, y)) in zip(shapes.keys(), pos.items()):
+        nodes = shapes[shape_key]['graph']
+        img = get_graph_image(nodes, targets, dist_threshold, size=mini_graph_size)
+        imagebox = OffsetImage(img, zoom=mini_graph_zoom)
+        # Add a white outline by setting frameon=True and customizing the bboxprops
+        ab = AnnotationBbox(
+            imagebox, (x, y),
+            frameon=True,
+            bboxprops=dict(edgecolor='black', linewidth=2, boxstyle='round,pad=0.2', facecolor='white')
+        )
+        ax.add_artist(ab)
+
+    plt.title("Shape String Transition Graph (with mini-graphs)")
+    plt.tight_layout()
+    plt.show()
+
 
 
 if __name__ == "__main__":
@@ -424,6 +625,14 @@ if __name__ == "__main__":
         np.array([1.5,2.2]),
         np.array([3.8,1.2]),
     ]).astype(np.float32)
+
+    # targets = np.array([
+    #     np.array([0,0]),
+    #     np.array([3,0]),
+    #     np.array([0,3]),
+    #     np.array([1.2,1.2]),
+        
+    # ]).astype(np.float32)
 
     dist_threshold = 1.1
 
@@ -505,12 +714,30 @@ if __name__ == "__main__":
 
 
 
-
     # parallel tilemap
-    graphs = gx.optimize_nodes_parallel(nodes, targets, dist_threshold, 0.1, 100000,1000,False)
-    print("now plotting...")
-    plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, "results/history/shapes_6", scale_nodes=20, n_bins=50)
+    # graphs = gx.optimize_nodes_parallel(nodes, targets, dist_threshold, 0.1, 10000,10,False)
+    # print("now plotting...")
+    # plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, "results/history/shapes_8", 
+    # scale_nodes=30, 
+    # n_bins=50, 
+    # multicolor_nodes=True, 
+    # target_marker='x',
+    # target_color=(1,0,0,0.3),
+    # target_scale=20,
+    # node_use_cmap=True,
+    # target_same_color=True,
+    # node_cmap='hsv',
+    # node_marker='o',)
 
+
+    # history = gx.optimize_nodes_history(nodes, targets, dist_threshold, 0.1, 1000000,False,False)
+    # shape_evolution_plot(history, targets, dist_threshold, "results/history/shapes_9", scale_nodes=30, figsize_per_shape=(4, 4), show_error=True, only_first_occurrence=True)
+
+
+    graphs_histories = gx.optimize_nodes_history_parallel(nodes, targets, dist_threshold, 0.1, 10000,1,False)
+
+    # Appel de la nouvelle fonction pour afficher le graphe des transitions de shapes
+    plot_shape_transition_graph_with_mini_graphs(graphs_histories, targets, dist_threshold, spring_k=1.0)
 
 
 

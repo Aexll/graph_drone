@@ -11,6 +11,7 @@
 #include <sstream>
 #include <vector>
 #include <string>
+#include <unordered_map>
 
 
 
@@ -33,6 +34,11 @@ struct ArrayInfo {
     // Accès optimisé aux coordonnées
     inline double* get_point(size_t i) { return ptr + i * stride; }
     inline const double* get_point(size_t i) const { return ptr + i * stride; }
+
+    // for the adjacency matrix (2D int array)
+    inline int& get_int_point(size_t i, size_t j) {
+        return reinterpret_cast<int*>(ptr)[i * stride + j];
+    }
 };
 
 // ===== FONCTIONS DE BASE OPTIMISÉES =====
@@ -71,6 +77,26 @@ bool is_connected(pybind11::array_t<double> a, pybind11::array_t<double> b, doub
     return distance_squared(a_info.get_point(0), b_info.get_point(0)) < threshold_sq;
 }
 
+
+/*
+return adjacency matrix of a graph
+*/
+pybind11::array_t<int> get_adjacency_matrix(pybind11::array_t<double> nodes, double dist_threshold) {
+    ArrayInfo nodes_info(nodes);
+    size_t n = nodes_info.n;
+    auto adj = pybind11::array_t<int>({n, n});
+    auto adj_buf = static_cast<int*>(adj.request().ptr);
+    size_t adj_stride = adj.strides(0) / sizeof(int);
+    double threshold_sq = dist_threshold * dist_threshold;
+    for (size_t i = 0; i < n; ++i) {
+        double* pi = nodes_info.get_point(i);
+        for (size_t j = 0; j < n; ++j) {
+            double* pj = nodes_info.get_point(j);
+            adj_buf[i * adj_stride + j] = (distance_squared(pi, pj) < threshold_sq) ? 1 : 0;
+        }
+    }
+    return adj;
+}
 
 /*
 BFS optimisé avec deque et early exit
@@ -489,6 +515,83 @@ std::string get_shape_string(pybind11::tuple shape) {
     return ss.str();
 }
 
+/*
+ * Depuis un historique de graphes (liste de graphes), renvoie une liste des transitions de string shapes (shape sous forme de string)
+ * associée à chaque graphes de l'historique, par exemple si on a 
+ * history = [g1, g2, g3, g4, g5] avec
+ * g1 = "1,2," g2 = "1,2" g3 = "2,1," g4 = "2,1," g5 = "2'3,,"
+ * alors la fonction retournera :
+ * {("1,2,","2,1,"),("2,1,","2'3,")}
+ */
+std::set<std::pair<std::string, std::string>> get_shape_string_transition_history(const std::vector<pybind11::array_t<double>>& history, double dist_threshold) {
+    std::set<std::pair<std::string, std::string>> transitions;
+    std::string last_shape;
+    bool first = true;
+    for (const auto& graph : history) {
+        auto shape = get_shape(graph, dist_threshold);
+        std::string shape_str = get_shape_string(shape);
+        if (first) {
+            last_shape = shape_str;
+            first = false;
+            continue;
+        }
+        if (shape_str != last_shape) {
+            transitions.emplace(last_shape, shape_str);
+            last_shape = shape_str;
+        }
+    }
+    return transitions;
+}
+
+
+
+
+
+
+/*
+depuis un historique de shapes donnée
+retournes un set de paire de shapes qui représente les transitions entre les shapes de l'historique
+*/
+
+
+
+
+/*
+ * Décompose un historique de graphes en un dictionnaire associant à chaque shape string :
+ *   - la shape sous forme de string (clé)
+ *   - le graphe ayant le meilleur score pour cette shape (valeur : dict avec 'graph' et 'score')
+ *   - le score du meilleur graphe pour cette shape (valeur : 'score')
+ *
+ * Retourne un dict Python : { shape_string : { 'graph': <ndarray>, 'score': <float> } }
+ */
+pybind11::dict decompose_history_by_shape(const std::vector<pybind11::array_t<double>>& history, pybind11::array_t<double> targets, double dist_threshold) {
+    pybind11::dict result;
+    std::unordered_map<std::string, std::pair<double, pybind11::array_t<double>>> bests;
+
+    for (const auto& graph : history) {
+        auto shape = get_shape(graph, dist_threshold);
+        std::string shape_str = get_shape_string(shape);
+        double score = cout_graph_p2(graph, targets);
+
+        auto it = bests.find(shape_str);
+        if (it == bests.end() || score < it->second.first) {
+            // Nouvelle shape ou meilleur score trouvé
+            bests[shape_str] = std::make_pair(score, graph);
+        }
+    }
+
+    // Remplir le dict Python
+    for (const auto& kv : bests) {
+        pybind11::dict entry;
+        entry["graph"] = kv.second.second;
+        entry["score"] = kv.second.first;
+        result[pybind11::str(kv.first)] = entry;
+    }
+    return result;
+}
+
+
+
 
 // ===== MODULE PYBIND11 =====
 
@@ -505,4 +608,9 @@ PYBIND11_MODULE(graphx, m) {
     m.def("optimize_nodes_parallel", &optimize_nodes_parallel, "Optimiser les noeuds en parallèle");
     m.def("get_shape_distance", &get_shape_distance, "Retourne la distance entre deux formes");
     m.def("get_shape_string", &get_shape_string, "Retourne la représentation sous forme de chaîne de caractères d'un tuple de connections");
+    m.def("get_shape_string_transition_history", &get_shape_string_transition_history, "Retourne un set de transitions (from_shape, to_shape) entre les shapes successives de l'historique, en sautant les répétitions consécutives.",
+        pybind11::arg("history"), pybind11::arg("dist_threshold"));
+    m.def("decompose_history_by_shape", &decompose_history_by_shape, "Décompose un historique de graphes en un dictionnaire associant à chaque shape string le meilleur graphe et son score.",
+        pybind11::arg("history"), pybind11::arg("targets"), pybind11::arg("dist_threshold"));
+    m.def("get_adjacency_matrix", &get_adjacency_matrix, "Retourne la matrice d'adjacence d'un graphe");
 }

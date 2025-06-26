@@ -33,7 +33,7 @@ print("optimized error:",gx.cout_graph_p2(opti_1, targets))
 print("")
 print("________________________")
 print("Parallel :")
-parallel_opti = gx.optimize_nodes_parallel(nodes, targets, dist_threshold, 0.01, 100000,100,False)
+parallel_opti = gx.optimize_nodes_parallel(nodes, targets, dist_threshold, 0.01, 10000,10,False)
 # sort by error
 sorted_parallel_opti = sorted(parallel_opti, key=lambda x: gx.cout_graph_p2(x, targets))
 print("min error:",gx.cout_graph_p2(sorted_parallel_opti[0], targets))
@@ -55,7 +55,7 @@ print("")
 print("________________________")
 print("Parallel history " , end="")
 start_time = time.perf_counter()
-histories = gx.optimize_nodes_history_parallel(nodes, targets, dist_threshold, 0.01, 100000,10,False)
+histories = gx.optimize_nodes_history_parallel(nodes, targets, dist_threshold, 0.01, 10000,10,False)
 end_time = time.perf_counter()
 print(f": {end_time - start_time} seconds")
 print("graph 0, first :",gx.cout_graph_p2(histories[0][0], targets))
@@ -94,3 +94,14 @@ print("shape of optimized string : ", gx.get_shape_string(gx.get_shape(opti_1, d
 
 print("distance between (1,3,1,1) and (1,2,2,1) :", 
 gx.get_shape_distance(gx.get_shape(nodes_shaped_1311, dist_threshold), gx.get_shape(nodes_shaped_1221, dist_threshold)))
+
+
+print("________________________")
+print("shape string history :")
+print(gx.get_shape_string_transition_history(history, dist_threshold))
+
+# shapes_info = gx.decompose_history_by_shape(history, targets, dist_threshold)
+# for shape_str, info in shapes_info.items():
+#     print("Shape:", shape_str)
+#     print("Best score:", info['score'])
+#     print("Best graph:", info['graph'])
