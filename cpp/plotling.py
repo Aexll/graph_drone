@@ -313,7 +313,7 @@ def shape_histogram(shapes):
     plt.show()
 
 
-def plot_shape_error_histograms_with_best_graph(histories, targets, dist_threshold, save_path=None, scale_nodes=20, figsize_per_row=(7, 4)):
+def plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, save_path=None, scale_nodes=20, figsize_per_row=(7, 4)):
     """
     Affiche toutes les formes dans une seule grande figure :
       - chaque ligne = une forme
@@ -322,7 +322,7 @@ def plot_shape_error_histograms_with_best_graph(histories, targets, dist_thresho
     Si save_path est fourni, sauvegarde la figure complète.
     """
     import errorcalc as ec
-    import graphx as gx
+    import graphx as gx # type: ignore
     import matplotlib.pyplot as plt
     import numpy as np
     import os
@@ -331,11 +331,10 @@ def plot_shape_error_histograms_with_best_graph(histories, targets, dist_thresho
 
     # Collecte des infos pour chaque historique
     graph_infos = []
-    for history in histories:
-        nodes = history[-1]
-        shape = tuple(gx.get_shape(nodes, dist_threshold))
-        error = ec.cout_snt(nodes, targets)
-        graph_infos.append({'nodes': nodes, 'shape': shape, 'error': error, 'history': history})
+    for graph in graphs:
+        shape = tuple(gx.get_shape(graph, dist_threshold))
+        error = ec.cout_snt(graph, targets)
+        graph_infos.append({'nodes': graph, 'shape': shape, 'error': error})
 
     # Regroupement par forme
     from collections import defaultdict
@@ -375,12 +374,21 @@ def plot_shape_error_histograms_with_best_graph(histories, targets, dist_thresho
         ax_img.set_title(f"Forme: {shape}\nErreur min: {errors[best_idx]:.2f}")
 
         # Partie droite : histogramme des erreurs
+        # On veut un histogramme avec l'axe x = erreur (même échelle pour tous), y = nombre de graphes
+        # On calcule les bins sur toutes les erreurs de toutes les formes
+        if row_idx == 0:
+            # On calcule les bins globaux une seule fois
+            all_errors = [g['error'] for graphs in shape_to_graphs.values() for g in graphs]
+            min_error = min(all_errors)
+            max_error = max(all_errors)
+            n_bins = 20  # ou ajuster selon besoin
+            bins = np.linspace(min_error, max_error, n_bins + 1)
         ax_hist = fig.add_subplot(gs[row_idx, 1])
-        ax_hist.bar(range(len(errors)), sorted(errors), color='#03A9F4')
-        ax_hist.set_xlabel("Graphes de cette forme")
-        ax_hist.set_ylabel("Erreur")
+        ax_hist.hist(errors, bins=bins, color='#03A9F4', edgecolor='black')
+        ax_hist.set_xlabel("Erreur")
+        ax_hist.set_ylabel("Nombre de graphes")
         ax_hist.set_title("Histogramme des erreurs")
-        ax_hist.set_xticks([])
+        ax_hist.set_xlim(min_error, max_error)
 
     plt.tight_layout()
     if save_path is not None:
@@ -435,10 +443,66 @@ if __name__ == "__main__":
     # histories = gx.optimize_nodes_history_parallel_old(nodes, targets, dist_threshold, 0.001, 100000, 100)
     # plot_history_gif_tilemap(histories, targets, "results/history/gif","tilemap.gif",sorted_by_error=True,steps_per_frame=10000,show_trace=False)
 
-    histories = gx.optimize_nodes_history_parallel_old(nodes, targets, dist_threshold, 0.01, 100000, 1000)
+    # start_time = time.time()
+    # graphs = gx.optimize_nodes_parallel_v2(nodes, targets, dist_threshold, 0.01, 100000, 100)
+    # end_time = time.time()
+    # print(f"Temps d'exécution (parallèle) : {end_time - start_time} secondes")
+
+    # start_time = time.time()
+    # histories = gx.optimize_nodes_parallel_workstealing(nodes, targets, dist_threshold, 0.01, 100000, 100)
+    # end_time = time.time()
+
+
+
+    # print(f"Temps d'exécution (historique) : {end_time - start_time} secondes")
+    # plot_history_gif_tilemap(histories, targets, "results/history/gif","tilemap.gif",sorted_by_error=True,steps_per_frame=10000,show_trace=False)
+
+
     # print(gx.get_shape(histories[0][-1], dist_threshold))
     # shapes = get_shapes_from_histories(histories)
     # shape_histogram(shapes)
-    plot_shape_error_histograms_with_best_graph(histories, targets, dist_threshold, "results/history/shapes_2", scale_nodes=20, figsize_per_row=(7, 4))
-    
+    # plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, "results/history/shapes_2", scale_nodes=20, figsize_per_row=(7, 4))
+
+    # ===== VERSION PARALLÈLE (hybrid) =====
+
+    # graphs = gx.optimize_nodes_parallel_workstealing(nodes, targets, dist_threshold, 0.01, 100000, 1000)
+    # plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, "results/history/shapes_3", scale_nodes=20, figsize_per_row=(7, 4))
+
+    # start_time = time.time()
+    # opti_nodes = gx.optimize_nodes(nodes, targets, dist_threshold, 0.01, 10000000)
+    # end_time = time.time()
+    # print(f"Temps d'exécution (inplace) : {end_time - start_time} secondes")
+
+    # start_time = time.time()
+    # opti_nodes = gx.optimize_nodes(nodes, targets, dist_threshold, 0.01, 10000000)
+    # end_time = time.time()
+    # print(f"Temps d'exécution (non inplace) : {end_time - start_time} secondes")
+
+
+
+    # histories = gx.optimize_nodes_history_parallel(nodes, targets, dist_threshold, 0.01, 10000,100)
+    # plot_history_gif_tilemap(histories, targets, "results/history/gif","tilemae_test.gif",sorted_by_error=True,steps_per_frame=1000,show_trace=False)
+
+
+
+    # n = 1000000
+    # history = gx.optimize_nodes_history(nodes, targets, dist_threshold, 0.01, n,False,False)
+    # plot_history_trace(history, targets, "results","trace_test.png",steps_per_frame=10)
+
+    # print(gx.cout_graph_p2(history[0], targets))
+    # print(gx.cout_graph_p2(history[len(history)//2], targets))
+    # print(gx.cout_graph_p2(history[-1], targets))
+
+
+
+
+    # parallel tilemap
+    graphs = gx.optimize_nodes_parallel(nodes, targets, dist_threshold, 0.01, 100000,100)
+    plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, "results/history/shapes_4", scale_nodes=20)
+
+
+
+
+
+
 

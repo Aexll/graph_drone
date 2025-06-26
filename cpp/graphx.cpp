@@ -8,13 +8,13 @@
 #include <deque>
 #include <algorithm>
 
-// ===== OPTIMISATIONS GÉNÉRALES =====
 
-// Cache pour éviter les validations répétées
+
+// pour ne pas avoir à récupérer les informations de l'array à chaque fois
 struct ArrayInfo {
     double* ptr;
     size_t n;
-    size_t stride;
+    size_t stride; // toujours 2
     
     ArrayInfo(pybind11::array_t<double>& arr) {
         pybind11::buffer_info info = arr.request();
@@ -53,6 +53,10 @@ double distance(pybind11::array_t<double> a, pybind11::array_t<double> b) {
     return distance_fast(a_info.get_point(0), b_info.get_point(0));
 }
 
+
+/*
+si deux points sont à distance inférieure à dist_threshold, alors ils sont connectés
+*/
 bool is_connected(pybind11::array_t<double> a, pybind11::array_t<double> b, double dist_threshold) {
     ArrayInfo a_info(a), b_info(b);
     if (a_info.n != 1 || b_info.n != 1) {
@@ -65,30 +69,11 @@ bool is_connected(pybind11::array_t<double> a, pybind11::array_t<double> b, doub
 
 
 /*
-Retourne un tuple de la taille du nombre de noeuds, qui représente le nombre de connections de chaque noeud
-(l'indice de la liste correspond au noeud et la valeur à son nombre de connections)
+BFS optimisé avec deque et early exit
+deque : permet de push/pop en O(1)
+early exit : si le graph est connecté, on peut stopper la recherche
+si le graph est connecté, retourne true, sinon false
 */
-std::vector<size_t> get_shape(pybind11::array_t<double> nodes, double dist_threshold) {
-    ArrayInfo nodes_info(nodes);
-    std::vector<size_t> shape(nodes_info.n, 0);
-    const double threshold_sq = dist_threshold * dist_threshold;
-    
-    for (size_t i = 0; i < nodes_info.n; ++i) {
-        const double* node_i = nodes_info.get_point(i);
-        for (size_t j = 0; j < nodes_info.n; ++j) {
-            if (i != j) {  // Un nœud ne se connecte pas à lui-même
-                const double* node_j = nodes_info.get_point(j);
-                if (distance_squared(node_i, node_j) < threshold_sq) {
-                    shape[i]++;
-                }
-            }
-        }
-    }
-    return shape;
-}
-
-
-// BFS optimisé avec deque et early exit
 bool is_graph_connected_bfs(pybind11::array_t<double> nodes, double dist_threshold) {
     ArrayInfo nodes_info(nodes);
     if (nodes_info.n == 0) return true;
@@ -123,8 +108,11 @@ bool is_graph_connected_bfs(pybind11::array_t<double> nodes, double dist_thresho
     return visited_count == nodes_info.n;
 }
 
-// ===== FONCTION DE COÛT OPTIMISÉE =====
 
+/*
+retourne le cout d'un graph, le cout est la somme des distances au carré entre les noeuds et les cibles (p2)
+le tout est ensuite racine carrée pour avoir la distance euclidienne
+*/
 double cout_graph_p2(pybind11::array_t<double> nodes, pybind11::array_t<double> targets) {
     ArrayInfo nodes_info(nodes), targets_info(targets);
     
@@ -141,20 +129,25 @@ double cout_graph_p2(pybind11::array_t<double> nodes, pybind11::array_t<double> 
     return std::sqrt(cout);
 }
 
-// ===== MUTATION OPTIMISÉE =====
 
+/*
+muter les noeuds en ajoutant une valeur aléatoire et retourne un nouveau tableau de noeuds
+*/
 pybind11::array_t<double> mutate_nodes(pybind11::array_t<double> nodes, double stepsize) {
     ArrayInfo nodes_info(nodes);
     
-    // Créer le résultat avec la même forme - syntaxe correcte
     auto result = pybind11::array_t<double>(std::vector<ptrdiff_t>{static_cast<ptrdiff_t>(nodes_info.n), 2});
     ArrayInfo result_info(result);
     
-    // Générateur thread-local optimisé
-    static thread_local std::mt19937 gen(std::random_device{}());
+    // Générateur thread-local pour avoir des valeurs aléatoires différentes pour chaque thread
+    static thread_local std::mt19937 gen;
+    static thread_local bool seeded = false;
+    if (!seeded) {
+        gen.seed(std::random_device{}() + std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::chrono::steady_clock::now().time_since_epoch().count());
+        seeded = true;
+    }
     std::normal_distribution<double> dist(0.0, stepsize);
     
-    // Mutation vectorisée
     for (size_t i = 0; i < nodes_info.n; ++i) {
         const double* src = nodes_info.get_point(i);
         double* dst = result_info.get_point(i);
@@ -165,31 +158,77 @@ pybind11::array_t<double> mutate_nodes(pybind11::array_t<double> nodes, double s
     return result;
 }
 
-// ===== OPTIMISATION AVEC COOLING SCHEDULE AMÉLIORÉ =====
 
+
+/*
+muter les noeuds en ajoutant une valeur aléatoire sans allouer de mémoire
+on ne retourne rien, on modifie directement le buffer 'result_info'
+*/
+void mutate_nodes_inplace(
+    const ArrayInfo& nodes_info, // Les nœuds source (const)
+    ArrayInfo& result_info,      // Les nœuds de destination à modifier
+    double stepsize
+) {
+    // Générateur thread-local pour avoir des valeurs aléatoires différentes pour chaque thread
+    static thread_local std::mt19937 gen;
+    static thread_local bool seeded = false;
+    if (!seeded) {
+        gen.seed(std::random_device{}() + std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::chrono::steady_clock::now().time_since_epoch().count());
+        seeded = true;
+    }
+    std::normal_distribution<double> dist(0.0, stepsize);
+    
+    // on fait une mutation vectorisée pour éviter les boucles
+    for (size_t i = 0; i < nodes_info.n; ++i) {
+        const double* src = nodes_info.get_point(i);
+        double* dst = result_info.get_point(i);
+        dst[0] = src[0] + dist(gen);
+        dst[1] = src[1] + dist(gen);
+    }
+}
+
+
+/*
+optimiser l'erreur d'un graph par mutation aléatoire
+on retourne le meilleur graph trouvé
+*/
 pybind11::array_t<double> optimize_nodes(
     pybind11::array_t<double> nodes, 
     pybind11::array_t<double> targets, 
     double dist_threshold, 
     double stepsize, 
-    size_t n
+    size_t n,
+    bool failure_stop_enabled = false
 ) {
-    auto current_nodes = nodes;
+    // Création des buffers UNE SEULE FOIS
+    auto current_nodes = pybind11::array_t<double>(nodes); // Copie initiale
+    auto candidate_nodes = pybind11::array_t<double>(nodes.request()); // Buffer pour les mutations
+
+    ArrayInfo current_info(current_nodes);
+    ArrayInfo candidate_info(candidate_nodes);
+    
     double best_error = cout_graph_p2(current_nodes, targets);
     size_t consecutive_failures = 0;
-    const size_t max_failures = n / 10; // Adaptative early stopping
+    const size_t max_failures = n / 10;
     
     for (size_t i = 0; i < n; ++i) {
-        // Cooling schedule non-linéaire plus efficace
         double progress = static_cast<double>(i) / n;
-        double current_stepsize = stepsize * std::exp(-2.0 * progress); // Décroissance exponentielle
+        double current_stepsize = stepsize * std::exp(-2.0 * progress);
         
-        auto new_nodes = mutate_nodes(current_nodes, current_stepsize);
-        double new_error = cout_graph_p2(new_nodes, targets);
+        // Muter dans le buffer 'candidate' sans allouer de mémoire
+        mutate_nodes_inplace(current_info, candidate_info, current_stepsize);
+        
+        double new_error = cout_graph_p2(candidate_nodes, targets);
         
         if (new_error < best_error) {
-            if (is_graph_connected_bfs(new_nodes, dist_threshold)) {
-                current_nodes = std::move(new_nodes);
+            if (is_graph_connected_bfs(candidate_nodes, dist_threshold)) {
+                // La mutation est acceptée : copier le candidat dans l'état actuel
+                // C'est beaucoup plus rapide qu'une nouvelle allocation
+                std::copy(
+                    static_cast<double*>(candidate_info.ptr),
+                    static_cast<double*>(candidate_info.ptr) + candidate_info.n * candidate_info.stride,
+                    static_cast<double*>(current_info.ptr)
+                );
                 best_error = new_error;
                 consecutive_failures = 0;
             } else {
@@ -199,8 +238,7 @@ pybind11::array_t<double> optimize_nodes(
             ++consecutive_failures;
         }
         
-        // Early stopping si trop d'échecs consécutifs
-        if (consecutive_failures > max_failures) {
+        if (failure_stop_enabled && consecutive_failures > max_failures) {
             break;
         }
     }
@@ -208,8 +246,11 @@ pybind11::array_t<double> optimize_nodes(
     return current_nodes;
 }
 
-// ===== VERSION AVEC HISTORIQUE OPTIMISÉE =====
 
+/*
+optimiser l'erreur d'un graph par mutation aléatoire et garder l'historique
+on retourne une liste de graphes optimisés qui sont les meilleurs à chaque étape
+*/
 std::vector<pybind11::array_t<double>> optimize_nodes_history(
     pybind11::array_t<double> nodes, 
     pybind11::array_t<double> targets, 
@@ -221,10 +262,15 @@ std::vector<pybind11::array_t<double>> optimize_nodes_history(
 ) {
     std::vector<pybind11::array_t<double>> history;
     history.reserve(n); // Estimation intelligente de la taille
+
+    auto current_nodes = pybind11::array_t<double>(nodes);
+    auto candidate_nodes = pybind11::array_t<double>(nodes.request());
     
-    auto current_nodes = nodes;
+    ArrayInfo current_info(current_nodes);
+    ArrayInfo candidate_info(candidate_nodes);
+    
     double best_error = cout_graph_p2(current_nodes, targets);
-    history.push_back(current_nodes);
+    history.push_back(pybind11::array_t<double>(current_nodes.request()));
     
     size_t consecutive_failures = 0;
     const size_t max_failures = n / 10;
@@ -233,18 +279,24 @@ std::vector<pybind11::array_t<double>> optimize_nodes_history(
         double progress = static_cast<double>(i) / n;
         double current_stepsize = stepsize * std::exp(-2.0 * progress);
         
-        auto new_nodes = mutate_nodes(current_nodes, current_stepsize);
-        double new_error = cout_graph_p2(new_nodes, targets);
+        mutate_nodes_inplace(current_info, candidate_info, current_stepsize);
+
+        double new_error = cout_graph_p2(candidate_nodes, targets);
         
         if (new_error < best_error) {
-            if (is_graph_connected_bfs(new_nodes, dist_threshold)) {
-                current_nodes = std::move(new_nodes);
+            if (is_graph_connected_bfs(candidate_nodes, dist_threshold)) {
+                // current_nodes = std::move(candidate_nodes);
+                std::copy(
+                    static_cast<double*>(candidate_info.ptr),
+                    static_cast<double*>(candidate_info.ptr) + candidate_info.n * candidate_info.stride,
+                    static_cast<double*>(current_info.ptr)
+                );
                 best_error = new_error;
                 consecutive_failures = 0;
                 
                 // Ne stocker que certains snapshots pour économiser la mémoire
                 // if (i % (n / 100 + 1) == 0 || i == n - 1) {
-                history.push_back(current_nodes);
+                history.push_back(pybind11::array_t<double>(current_nodes.request()));
                 
             } else {
                 ++consecutive_failures;
@@ -255,7 +307,7 @@ std::vector<pybind11::array_t<double>> optimize_nodes_history(
 
         
         if (push_always) {
-            history.push_back(current_nodes);
+            history.push_back(pybind11::array_t<double>(current_nodes.request()));
         }
         
         if (failure_stop_enabled && consecutive_failures > max_failures) {
@@ -268,207 +320,55 @@ std::vector<pybind11::array_t<double>> optimize_nodes_history(
     return history;
 }
 
-// ===== VERSION PARALLÈLE ULTRA-OPTIMISÉE =====
-
-struct NodeDataOptimized {
-    std::vector<double> data;
-    size_t n;
-    
-    explicit NodeDataOptimized(pybind11::array_t<double> arr) {
-        ArrayInfo info(arr);
-        n = info.n;
-        data.resize(n * 2);
-        
-        // Copie vectorisée
-        for (size_t i = 0; i < n; ++i) {
-            const double* src = info.get_point(i);
-            data[i * 2] = src[0];
-            data[i * 2 + 1] = src[1];
-        }
-    }
-    
-    inline double* get_point(size_t i) { return &data[i * 2]; }
-    inline const double* get_point(size_t i) const { return &data[i * 2]; }
-    
-    pybind11::array_t<double> to_array() const {
-        auto result = pybind11::array_t<double>(std::vector<ptrdiff_t>{static_cast<ptrdiff_t>(n), 2});
-        ArrayInfo result_info(result);
-        
-        for (size_t i = 0; i < n; ++i) {
-            double* dst = result_info.get_point(i);
-            const double* src = get_point(i);
-            dst[0] = src[0];
-            dst[1] = src[1];
-        }
-        return result;
-    }
-};
-
-// Versions natives ultra-rapides
-double cout_graph_p2_native(const NodeDataOptimized& nodes, const NodeDataOptimized& targets) {
-    double cout = 0;
-    for (size_t i = 0; i < nodes.n; ++i) {
-        const double* node_ptr = nodes.get_point(i);
-        const double* target_ptr = targets.get_point(i);
-        cout += distance_squared(node_ptr, target_ptr);
-    }
-    return std::sqrt(cout);
-}
-
-bool is_graph_connected_bfs_native(const NodeDataOptimized& nodes, double dist_threshold) {
-    if (nodes.n <= 1) return true;
-    
-    const double threshold_sq = dist_threshold * dist_threshold;
-    std::vector<bool> visited(nodes.n, false);
-    std::deque<size_t> queue;
-    
-    queue.push_back(0);
-    visited[0] = true;
-    size_t visited_count = 1;
-
-    while (!queue.empty() && visited_count < nodes.n) {
-        size_t current = queue.front();
-        queue.pop_front();
-        
-        const double* current_ptr = nodes.get_point(current);
-        
-        for (size_t i = 0; i < nodes.n; ++i) {
-            if (!visited[i]) {
-                const double* other_ptr = nodes.get_point(i);
-                if (distance_squared(current_ptr, other_ptr) < threshold_sq) {
-                    visited[i] = true;
-                    queue.push_back(i);
-                    ++visited_count;
-                }
-            }
-        }
-    }
-    
-    return visited_count == nodes.n;
-}
-
-NodeDataOptimized mutate_nodes_native(const NodeDataOptimized& nodes, double stepsize) {
-    NodeDataOptimized result = nodes;
-    
-    static thread_local std::mt19937 gen(std::random_device{}());
-    std::normal_distribution<double> dist(0.0, stepsize);
-    
-    for (size_t i = 0; i < nodes.n * 2; ++i) {
-        result.data[i] += dist(gen);
-    }
-    
-    return result;
-}
-
-std::vector<NodeDataOptimized> optimize_nodes_history_native(
-    NodeDataOptimized nodes, 
-    const NodeDataOptimized& targets, 
-    double dist_threshold, 
-    double stepsize, 
-    size_t n
-) {
-    std::vector<NodeDataOptimized> history;
-    history.reserve(n / 100 + 1);
-    
-    double best_error = cout_graph_p2_native(nodes, targets);
-    history.push_back(nodes);
-    
-    size_t consecutive_failures = 0;
-    const size_t max_failures = n / 10;
-    
-    for (size_t i = 0; i < n; ++i) {
-        double progress = static_cast<double>(i) / n;
-        double current_stepsize = stepsize * std::exp(-2.0 * progress);
-        
-        NodeDataOptimized new_nodes = mutate_nodes_native(nodes, current_stepsize);
-        double new_error = cout_graph_p2_native(new_nodes, targets);
-        
-        if (new_error < best_error) {
-            if (is_graph_connected_bfs_native(new_nodes, dist_threshold)) {
-                nodes = std::move(new_nodes);
-                best_error = new_error;
-                consecutive_failures = 0;
-                
-                if (i % (n / 100 + 1) == 0 || i == n - 1) {
-                    history.push_back(nodes);
-                }
-            } else {
-                ++consecutive_failures;
-            }
-        } else {
-            ++consecutive_failures;
-        }
-        
-        if (consecutive_failures > max_failures) {
-            break;
-        }
-    }
-    
-    return history;
-}
-
-std::vector<std::vector<pybind11::array_t<double>>> optimize_nodes_history_parallel(
+/*
+retournes une liste de n_threads graphes optimisés en parallèle, chaque graphe est un tableau de noeuds
+*/
+std::vector<pybind11::array_t<double>> optimize_nodes_parallel(
     pybind11::array_t<double> nodes,
     pybind11::array_t<double> targets,
     double dist_threshold,
     double stepsize,
     size_t n,
-    size_t n_threads
+    size_t n_threads,
+    bool failure_stop_enabled = false
 ) {
-    // Conversion avant parallélisation
-    NodeDataOptimized nodes_native(nodes);
-    NodeDataOptimized targets_native(targets);
-    
-    std::vector<std::vector<NodeDataOptimized>> all_histories_native(n_threads);
     std::vector<std::thread> threads;
-    threads.reserve(n_threads);
+    std::vector<pybind11::array_t<double>> all_nodes(n_threads);
 
-    // Relâcher le GIL pour le parallélisme pur
     pybind11::gil_scoped_release release;
 
     auto worker = [&](size_t thread_id) {
         try {
             pybind11::gil_scoped_acquire acquire;
-            auto history = optimize_nodes_history_native(
-                nodes_native, targets_native, dist_threshold, stepsize, n
-            );
-            all_histories_native[thread_id] = std::move(history);
+            auto nodes_copy = pybind11::array_t<double>(nodes.request()); // Copie profonde du buffer
+            all_nodes[thread_id] = optimize_nodes(nodes_copy, targets, dist_threshold, stepsize, n, failure_stop_enabled);
         } catch (const std::exception& e) {
-            std::cerr << "Exception in thread " << thread_id << ": " << e.what() << std::endl;
+            std::cout << "Exception in thread " << thread_id << ": " << e.what() << std::endl;
         }
     };
 
     for (size_t i = 0; i < n_threads; ++i) {
         threads.emplace_back(worker, i);
     }
-    
     for (auto& t : threads) {
         t.join();
     }
-
-    // Reconversion efficace
-    std::vector<std::vector<pybind11::array_t<double>>> all_histories(n_threads);
-    for (size_t i = 0; i < n_threads; ++i) {
-        all_histories[i].reserve(all_histories_native[i].size());
-        for (const auto& node_data : all_histories_native[i]) {
-            all_histories[i].push_back(node_data.to_array());
-        }
-    }
-    
-    return all_histories;
+    return all_nodes;
 }
 
 
 
-// ===== VERSION PARALLÈLE (ancienne version) =====
-
-std::vector<std::vector<pybind11::array_t<double>>> optimize_nodes_history_parallel_old(
+/*
+retournes une liste de n_threads historiques de graphes optimisés en parallèle, chaque historique est une liste de graphes
+*/
+std::vector<std::vector<pybind11::array_t<double>>> optimize_nodes_history_parallel(
     pybind11::array_t<double> nodes,
     pybind11::array_t<double> targets,
     double dist_threshold,
     double stepsize,
     size_t n,
-    size_t n_threads
+    size_t n_threads,
+    bool failure_stop_enabled = false
 ) {
     std::vector<std::vector<pybind11::array_t<double>>> all_histories(n_threads);
     std::vector<std::thread> threads;
@@ -478,9 +378,8 @@ std::vector<std::vector<pybind11::array_t<double>>> optimize_nodes_history_paral
     auto worker = [&](size_t thread_id) {
         try {
             pybind11::gil_scoped_acquire acquire;
-            // std::cout << "Thread " << thread_id << " start history\n";
-            auto history = optimize_nodes_history(nodes, targets, dist_threshold, stepsize, n);
-            // std::cout << "Thread " << thread_id << " end history\n";
+            auto nodes_copy = pybind11::array_t<double>(nodes.request()); // Copie profonde du buffer
+            auto history = optimize_nodes_history(nodes_copy, targets, dist_threshold, stepsize, n, failure_stop_enabled);
             all_histories[thread_id] = std::move(history);
         } catch (const std::exception& e) {
             std::cout << "Exception in thread " << thread_id << ": " << e.what() << std::endl;
@@ -499,6 +398,54 @@ std::vector<std::vector<pybind11::array_t<double>>> optimize_nodes_history_paral
 }
 
 
+
+/*
+Retourne un tuple de la taille du nombre de noeuds, qui représente le nombre de connections de chaque noeud
+(l'indice de la liste correspond au noeud et la valeur à son nombre de connections)
+*/
+pybind11::tuple get_shape(pybind11::array_t<double> nodes, double dist_threshold) {
+    ArrayInfo nodes_info(nodes);
+    std::vector<size_t> shape(nodes_info.n, 0);
+    const double threshold_sq = dist_threshold * dist_threshold;
+    
+    for (size_t i = 0; i < nodes_info.n; ++i) {
+        const double* node_i = nodes_info.get_point(i);
+        for (size_t j = 0; j < nodes_info.n; ++j) {
+            if (i != j) {  // Un nœud ne se connecte pas à lui-même
+                const double* node_j = nodes_info.get_point(j);
+                if (distance_squared(node_i, node_j) < threshold_sq) {
+                    shape[i]++;
+                }
+            }
+        }
+    }
+    return pybind11::tuple(pybind11::cast(shape));
+}
+
+
+/*
+Retourne la distance entre deux formes, la distance est le nombre d'étapes nécessaires 
+pour passer de la forme 1 à la forme 2
+est considéré comme une étape :
+retirer une connexion entre deux noeuds
+ajouter une connexion entre deux noeuds
+*/
+int get_shape_distance(pybind11::tuple shape1, pybind11::tuple shape2) {
+    std::vector<ssize_t> shape1_vec = pybind11::cast<std::vector<ssize_t>>(shape1);
+    std::vector<ssize_t> shape2_vec = pybind11::cast<std::vector<ssize_t>>(shape2);
+
+    if (shape1_vec.size() != shape2_vec.size()) {
+        throw std::runtime_error("Shapes must have the same length");
+    }
+
+    int distance = 0;
+    for (size_t i = 0; i < shape1_vec.size(); i++) {
+        distance += std::abs(shape1_vec[i] - shape2_vec[i]);
+    }
+    return distance;
+}
+
+
 // ===== MODULE PYBIND11 =====
 
 PYBIND11_MODULE(graphx, m) {
@@ -510,11 +457,10 @@ PYBIND11_MODULE(graphx, m) {
     m.def("optimize_nodes", &optimize_nodes, "Optimiser les noeuds");
     m.def("optimize_nodes_history", &optimize_nodes_history, "Optimiser les noeuds et garder l'historique");
     m.def("optimize_nodes_history_parallel", &optimize_nodes_history_parallel, "Optimiser les noeuds et garder l'historique en parallèle");
-    m.def("optimize_nodes_history_parallel_old", &optimize_nodes_history_parallel_old, "Optimiser les noeuds et garder l'historique en parallèle (ancienne version)");
     m.def("get_shape", &get_shape, "Retourne un tuple de la taille du nombre de noeuds, qui représente le nombre de connections de chaque noeud");
-    // // ===== FONCTIONS NATIVES =====
-    // m.def("cout_graph_p2_native", &cout_graph_p2_native, "Calcul le cout d'un graph");
-    // m.def("is_graph_connected_bfs_native", &is_graph_connected_bfs_native, "Vérifie si un graph est connecté");
-    // m.def("mutate_nodes_native", &mutate_nodes_native, "Muter les noeuds");
-    // m.def("optimize_nodes_history_native", &optimize_nodes_history_native, "Optimiser les noeuds et garder l'historique");
+    m.def("optimize_nodes_parallel", &optimize_nodes_parallel, "Optimiser les noeuds en parallèle");
+    m.def("get_shape_distance", &get_shape_distance, "Retourne la distance entre deux formes");
+
+
+
 }
