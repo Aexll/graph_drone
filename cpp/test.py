@@ -1,7 +1,9 @@
+from tkinter import N
 import graphx as gx # type: ignore
 import numpy as np
 import time
-
+import matplotlib.pyplot as plt
+import getimg
 
 targets = np.array([
     np.array([0,0]),
@@ -20,6 +22,89 @@ nodes = np.array([
     np.mean(targets, axis=0)
     for _ in range(len(targets))
 ]).astype(np.float32)
+
+opti_nodes = gx.optimize_nodes_genetic(nodes, targets, dist_threshold, 0.1, 10000, 20, 0.1)
+
+
+
+print("________________________")
+print("chose_node_near_node_weighted :")
+point = np.array([1.5,2.2])
+dist = np.array([gx.distance(np.array([nodes[i]]),np.array([point])) for i in range(len(nodes))])
+choses = []
+for _ in range(100000):
+    choses.append(gx.chose_node_near_node_weighted(nodes, point, dist_threshold, 0.5))
+choses = np.array(choses)
+print(dist)
+# plt.hist(choses, bins=len(nodes))
+# plt.bar(dist, np.zeros(len(dist)))
+# plt.xlim(0, len(nodes))
+# plt.show()
+count = []
+for i in range(len(nodes)):
+    count.append(np.sum(choses == i))
+for i in range(len(nodes)):
+    print(f"node {i} : {0*count[i]} \t {dist[i]:.2f} \t {(count[i]/len(choses)*100):.2f}%")
+
+
+
+
+
+print("________________________")
+print("get_adjacency_matrix :")
+print(gx.get_adjacency_matrix(nodes, dist_threshold))
+
+
+print("________________________")
+print("get_node_contact_array :")
+print(gx.get_node_contact_array(nodes, 0, dist_threshold))
+# img = getimg.get_mini_graph_image(nodes, targets, dist_threshold,skin="black")
+# plt.imshow(img)
+# plt.show()
+
+
+print("________________________")
+# nodes = np.array([[0,0],[1,0],[0,1],[1,1],[2,1],[1,2],[2,2],[2,3],[3,2],[3,3]])
+print("mutate_nodes :")
+time_start = time.perf_counter()
+fails=0
+nodes = opti_nodes.copy()
+for _ in range(10000):
+    done=False
+    while not done:
+        new_nodes= gx.mutate_nodes(nodes, 0.1)
+        if gx.is_graph_connected_bfs(new_nodes, dist_threshold):
+            nodes = new_nodes
+            done=True
+        else:
+            fails+=1
+time_end = time.perf_counter()
+print(f"mutate_nodes time: {time_end - time_start} seconds")
+print(f"fails: {fails}")
+
+print("________________________")
+print("safe_mutate_nodes :")
+nodes = opti_nodes.copy()
+# nodes = np.array([[0,0],[1,0],[0,1],[1,1],[2,1],[1,2],[2,2],[2,3],[3,2],[3,3]])
+im1 = getimg.get_mini_graph_image(nodes, targets, dist_threshold,skin="default")
+time_start = time.perf_counter()
+for _ in range(10000):
+    nodes = gx.safe_mutate_nodes(nodes, 0, dist_threshold, 0.1)
+time_end = time.perf_counter()
+print(f"safe_mutate_nodes time: {time_end - time_start} seconds")
+im2 = getimg.get_mini_graph_image(nodes, targets, dist_threshold,skin="default")
+
+plt.subplot(1,2,1)
+plt.imshow(im1)
+plt.subplot(1,2,2)
+plt.imshow(im2)
+plt.show()
+
+
+
+
+
+quit()
 
 print("________________________")
 print("Optimized :")
@@ -105,3 +190,12 @@ print(gx.get_shape_string_transition_history(history, dist_threshold))
 #     print("Shape:", shape_str)
 #     print("Best score:", info['score'])
 #     print("Best graph:", info['graph'])
+
+print("________________________")
+print("genetic :")
+genetic_opti = gx.optimize_nodes_genetic(nodes, targets, dist_threshold, 0.1, 100000, 20, 0.1)
+print("genetic error:",gx.cout_graph_p2(genetic_opti, targets))
+
+
+
+

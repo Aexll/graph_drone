@@ -81,7 +81,12 @@ def generate_and_plot(
     #     use_genetic_sampling=use_genetic_sampling
     # )
     nodes = np.array([[np.mean(targets[:, 0]), np.mean(targets[:, 1])]] * len(targets))
-    results = gx.optimize_nodes_history_parallel_old(nodes, targets, dist_threshold, mutation_stepsize, steps, ngraphs)
+    results = gx.optimize_nodes_history_parallel(nodes, 
+    targets, 
+    dist_threshold, 
+    mutation_stepsize,
+    steps,
+    ngraphs,False)
     # Use the last element of each history as the final result
     final_results = [history[-1] for history in results]
     errors = np.array([ec.cout_snt(result, targets) for result in final_results])

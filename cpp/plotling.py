@@ -8,7 +8,8 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from PIL import Image
 import networkx as nx
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-
+import graphx as gx # type: ignore
+from matplotlib.patches import FancyArrowPatch
 
 
 # for a single graph history
@@ -276,17 +277,17 @@ def plot_history_gif_tilemap(histories, targets, save_path, img_name="tilemap.gi
 
 
 
-def get_shapes_from_histories(histories) -> list[list[int]]:
-    """
-    dans un historique il se trouve plieurs graphes ayant les mêmes "formes"
-    la forme d'un graphe est définie par le nombre de connections de chaque noeud
-    on peut donc définir une forme comme une liste d'entiers qui représente le nombre de connections de chaque noeud
-    (l'indice de la liste correspond au noeud et la valeur à son nombre de connections)
-    """
-    shapes = []
-    for history in histories:
-        shapes.append(tuple(gx.get_shape(history[-1], dist_threshold)))
-    return shapes
+# def get_shapes_from_histories(histories) -> list[list[int]]:
+#     """
+#     dans un historique il se trouve plieurs graphes ayant les mêmes "formes"
+#     la forme d'un graphe est définie par le nombre de connections de chaque noeud
+#     on peut donc définir une forme comme une liste d'entiers qui représente le nombre de connections de chaque noeud
+#     (l'indice de la liste correspond au noeud et la valeur à son nombre de connections)
+#     """
+#     shapes = []
+#     for history in histories:
+#         shapes.append(tuple(gx.get_shape(history[-1], dist_threshold)))
+#     return shapes
 
 
 
@@ -531,7 +532,7 @@ def shape_evolution_plot(history, targets, dist_threshold, save_path=None, scale
 #     ax.set_aspect('equal')
 
 def draw_mini_graph(ax, nodes, targets, dist_threshold, size=1.5, scale_nodes=20, scale_targets=20, offset=0.2):
-    import graphx as gx # type: ignore
+    # import graphx as gx # type: ignore
     adj = gx.get_adjacency_matrix(nodes, dist_threshold)
     for i in range(nodes.shape[0]):
         for j in range(i+1, nodes.shape[0]):
@@ -555,6 +556,127 @@ def get_graph_image(nodes, targets, dist_threshold, size=1.5):
     image = image[:, :, [1, 2, 3, 0]]  # ARGB -> RGBA
     plt.close(fig)
     return image
+
+
+def get_mini_graph_image(nodes, targets, dist_threshold, size=1.5, skin="default", error=None):
+    nodes_scale = 20
+    node_zorder = 4
+    nodes_marker = 'o'
+    scale_targets = 20
+    offset = 0.2
+    nodes_color = 'blue'
+    targets_color = 'red'
+    line_width = 1
+    line_color = 'gray'
+    line_zorder = 1
+    line_style = '-'
+    target_lines = False
+    target_lines_width = 0.5
+    target_lines_color = (1,0,0,0.5)
+    targets_marker = 'o'
+    background_color = 'white'
+    text_color = 'black'
+    if skin == "small":
+        nodes_scale = 10
+        scale_targets = 10
+        offset = 0.1
+        nodes_color = 'blue'
+        targets_color = 'red'
+        line_width = 0.5
+    elif skin == "stick":
+        nodes_color = 'black'
+        nodes_scale = 10
+        node_zorder = 4
+        nodes_marker = ' '
+        targets_color = 'white'
+        target_lines = True
+        target_lines_width = 0.5
+        target_lines_color = (0,0,0,0.2)
+        line_width = 2
+        line_color = 'black'
+        line_zorder = 4
+    elif skin == "black":
+        nodes_color = 'black'
+        nodes_scale = 30
+        node_zorder = 4
+        nodes_marker = 'num'
+        targets_color = 'white'
+        line_width = 0.5
+        line_color = 'black'
+        line_zorder = 4
+    elif skin == "constellation":
+        nodes_color = 'yellow'
+        nodes_scale = 30
+        nodes_marker = '*'
+        node_zorder = 4
+        targets_color = 'black'
+        targets_marker = ' '
+        line_width = 0.5
+        line_color = 'yellow'
+        line_style = '--'
+        line_zorder = 4
+        background_color = (0.1,0,0.5,1)
+        text_color = 'yellow'
+
+    fig, ax = plt.subplots(figsize=(size, size))
+    adj = gx.get_adjacency_matrix(nodes, dist_threshold)
+    for i in range(nodes.shape[0]):
+        for j in range(i+1, nodes.shape[0]):
+            if adj[i, j] == 1:
+                ax.plot([nodes[i, 0], nodes[j, 0]], [nodes[i, 1], nodes[j, 1]], 
+                color=line_color, 
+                linewidth=line_width, 
+                zorder=line_zorder, 
+                linestyle=line_style,
+                )
+    if target_lines:
+        for i in range(nodes.shape[0]):
+            ax.plot([nodes[i, 0], targets[i, 0]], [nodes[i, 1], targets[i, 1]], color=target_lines_color, linewidth=target_lines_width, zorder=line_zorder)
+    
+    if nodes_marker == "num":
+        for i in range(nodes.shape[0]):
+            txt_size = nodes_scale/3
+            ax.text(
+                nodes[i, 0], nodes[i, 1], str(i),
+                fontsize=txt_size,
+                zorder=node_zorder+1,
+                ha='center',
+                va='center',
+            )
+        nodes_marker = 'o'
+        nodes_color = 'white'
+    ax.scatter(nodes[:, 0], nodes[:, 1], color=nodes_color, s=nodes_scale, zorder=node_zorder, marker=nodes_marker)
+    ax.scatter(targets[:, 0], targets[:, 1], color=targets_color, zorder=3, s=scale_targets, marker=targets_marker)
+    ax.set_xlim(targets[:, 0].min() - offset, targets[:, 0].max() + offset)
+    ax.set_ylim(targets[:, 1].min() - offset, targets[:, 1].max() + offset)
+
+    if error is not None:
+        ax.text(
+            (ax.get_xlim()[0] + ax.get_xlim()[1]) / 2, ax.get_ylim()[0] - offset, f"{error:.2f}",
+            fontsize=size*6,
+            zorder=node_zorder+1,
+            ha='center',
+            va='bottom',
+            transform=ax.transData,
+            color=text_color,
+        )
+
+    ax.axis('off')
+    ax.set_aspect('equal')
+    fig.set_facecolor(background_color)
+    fig.canvas.draw()
+    image = np.frombuffer(fig.canvas.tostring_argb(), dtype='uint8') # type: ignore
+    image = image.reshape(fig.canvas.get_width_height()[::-1] + (4,))
+    # Convert ARGB to RGBA for matplotlib OffsetImage
+    image = image[:, :, [1, 2, 3, 0]]  # ARGB -> RGBA
+    plt.close(fig)
+    return image
+
+
+
+
+
+
 
 def plot_shape_transition_graph_with_mini_graphs(graphs_histories, targets, dist_threshold, shapes_dict=None, figsize=(12, 8), mini_graph_size=1, mini_graph_zoom=0.5, seed=42, spring_k=2.0):
     """
@@ -602,7 +724,7 @@ def plot_shape_transition_graph_with_mini_graphs(graphs_histories, targets, dist
         ab = AnnotationBbox(
             imagebox, (x, y),
             frameon=True,
-            bboxprops=dict(edgecolor='black', linewidth=2, boxstyle='round,pad=0.2', facecolor='white')
+            bboxprops=dict(edgecolor='black', linewidth=1, boxstyle='round,pad=0.2', facecolor='yellow')
         )
         ax.add_artist(ab)
 
@@ -612,9 +734,152 @@ def plot_shape_transition_graph_with_mini_graphs(graphs_histories, targets, dist
 
 
 
-if __name__ == "__main__":
+def filter_shapes_dict(shapes_dict, transition_history, filter_func=lambda shape_key, info: True):
 
-    import errorcalc as ec
+        new_shapes_dict = {}
+        new_shapes_transition_history = set()
+
+        for shape_key, info in shapes_dict.items():
+            if filter_func(shape_key, info):
+                new_shapes_dict[shape_key] = info
+
+        for transition in transition_history:
+            if transition[0] in new_shapes_dict and transition[1] in new_shapes_dict:
+                new_shapes_transition_history.add(transition)
+
+        return new_shapes_dict, new_shapes_transition_history
+
+def histories_to_shapes_dict_and_transition_history(histories, targets, dist_threshold):
+        shapes_dict = {}
+        transition_history = set()
+        for history in histories:
+            gh = gx.get_shape_string_transition_history(history, dist_threshold)
+            gd = gx.decompose_history_by_shape(history, targets, dist_threshold)
+            for shape_key, info in gd.items():
+                if shape_key not in shapes_dict:
+                    shapes_dict[shape_key] = info
+                else:
+                    if info['score'] < shapes_dict[shape_key]['score']:
+                        shapes_dict[shape_key] = info
+            transition_history.update(gh)
+        return shapes_dict, transition_history
+
+def plot_shape_frise_with_transitions(
+    shapes_dict,  # dict: shape_key -> {'graph': nodes, 'score': float}
+    transitions,  # set of (shape_key_from, shape_key_to)
+    targets,      # positions cibles (pour dessiner les mini-graphes)
+    dist_threshold,
+    figsize=(12, 4),
+    mini_graph_size=1.5,
+    mini_graph_zoom=0.5,
+    y=0,  # position verticale fixe pour tous les shapes
+    show_error=True,
+    margin=0.5,  # espace horizontal minimal entre deux shapes (sera recalculé dynamiquement)
+    font_size=10,
+    arrow_style='-|>',
+    arrow_color='gray',
+    node_outline_color='black',
+    node_outline_width=1,
+    node_box_color='yellow',
+    error_fmt='{:.2f}',
+    zigzag_amplitude=0.4,  # amplitude du zigzag vertical
+    zigzag=True,           # activer le zigzag
+):
+    """
+    Dessine une frise horizontale de mini-graphes ordonnés par erreur, avec transitions entre shapes.
+    - shapes_dict : {shape_key: {'graph': nodes, 'score': float}}
+    - transitions : set de (shape_key_from, shape_key_to)
+    - targets : positions cibles
+    - dist_threshold : seuil pour les arêtes
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+    import numpy as np
+
+    # 1. Trier les shapes par erreur croissante
+    sorted_shapes = sorted(shapes_dict.items(), key=lambda x: x[1]['score'])
+    n = len(sorted_shapes)
+    if n == 0:
+        print("Aucune shape à afficher.")
+        return
+
+    # 2. Calculer la taille réelle d'un minigraphe (en inch)
+    # On crée une image temporaire pour estimer la taille
+    nodes_sample = sorted_shapes[0][1]['graph']
+    img_sample = get_graph_image(nodes_sample, targets, dist_threshold, size=mini_graph_size)
+    dpi = 100  # valeur typique pour matplotlib
+    img_px = img_sample.shape[0]  # hauteur en pixels (carré)
+    img_inch = img_px / dpi * mini_graph_zoom
+    # Espacement horizontal minimal = taille image + marge
+    min_margin = img_inch * 1.2  # 20% de marge autour
+
+    # 3. Déterminer les positions horizontales (x)
+    xs = np.arange(n) * min_margin
+
+    # 4. Décalage vertical (zigzag ou non)
+    if zigzag:
+        ys = np.array([y + ((-1)**i) * zigzag_amplitude for i in range(n)])
+    else:
+        ys = np.full(n, y)
+
+    # 5. Associer chaque shape_key à sa position (x, y)
+    shape_to_pos = {shape_key: (x, y_) for (shape_key, _), x, y_ in zip(sorted_shapes, xs, ys)}
+
+    # 6. Ajuster la taille de la figure si besoin
+    total_width = xs[-1] - xs[0] + 2 * min_margin
+    fig_height = max(figsize[1], 2 * (img_inch + zigzag_amplitude))
+    fig, ax = plt.subplots(figsize=(total_width, fig_height))
+    ax.set_ylim(-1.5, 1.5)
+    ax.set_xlim(xs[0] - min_margin, xs[-1] + min_margin)
+    ax.axis('off')
+
+    # 7. Dessiner les mini-graphes
+    for (shape_key, info), x, y_ in zip(sorted_shapes, xs, ys):
+        nodes = info['graph']
+        img = get_graph_image(nodes, targets, dist_threshold, size=mini_graph_size)
+        imagebox = OffsetImage(img, zoom=mini_graph_zoom)
+        ab = AnnotationBbox(
+            imagebox, (x, y_),
+            frameon=True,
+            bboxprops=dict(edgecolor=node_outline_color, linewidth=node_outline_width, boxstyle='round,pad=0.2', facecolor=node_box_color)
+        )
+        ax.add_artist(ab)
+        # Afficher l'erreur sous le minigraphe
+        if show_error:
+            ax.text(x, y_ - (img_inch * 0.7), error_fmt.format(info['score']), ha='center', va='top', fontsize=font_size)
+        # Afficher la shape string au-dessus
+        ax.text(x, y_ + (img_inch * 0.7), str(shape_key), ha='center', va='bottom', fontsize=font_size-2, rotation=30)
+
+    # 8. Dessiner les transitions (arrows)
+    for idx, (from_shape, to_shape) in enumerate(transitions):
+        if from_shape in shape_to_pos and to_shape in shape_to_pos:
+            x0, y0 = shape_to_pos[from_shape]
+            x1, y1 = shape_to_pos[to_shape]
+            if abs(x1 - x0) < 1e-6 and abs(y1 - y0) < 1e-6:
+                continue  # pas de flèche sur place
+            # Rayon de la courbe : positif si x1>x0, négatif sinon, et alterne selon l'indice
+            rad = 0.4 * (1 if x1 > x0 else -1)
+            # Pour alterner le sens des arcs si plusieurs transitions similaires
+            if idx % 2 == 1:
+                rad = -rad
+            arrow = FancyArrowPatch(
+                (x0, y0), (x1, y1),
+                connectionstyle=f"arc3,rad={rad}",
+                arrowstyle=arrow_style,
+                color=arrow_color,
+                lw=1.5,
+                mutation_scale=15,
+            )
+            ax.add_patch(arrow)
+
+    plt.tight_layout()
+    plt.savefig("shape_frise_with_transitions.png")
+    # plt.show()
+
+
+
+
+if __name__ == "__main__" and True:
 
     targets = np.array([
         np.array([0,0]),
@@ -626,121 +891,78 @@ if __name__ == "__main__":
         np.array([3.8,1.2]),
     ]).astype(np.float32)
 
+    nodes = np.array([[np.mean(targets[:, 0]), np.mean(targets[:, 1])]] * len(targets))
+
+    dist_threshold = 1.1
+
+    nodes_histories = gx.optimize_nodes_parallel_hybrid(nodes, targets, dist_threshold, 0.1, 10000, 100)
+
+    # testing get_mini_graph_image
+    img_default = get_mini_graph_image(nodes_histories[0], targets, dist_threshold, size=1.5, skin="default", error=gx.cout_graph_p2(nodes_histories[0], targets))
+    img_stick = get_mini_graph_image(nodes_histories[0], targets, dist_threshold, size=1.5, skin="stick", error=gx.cout_graph_p2(nodes_histories[0], targets))
+    img_black = get_mini_graph_image(nodes_histories[0], targets, dist_threshold, size=1.5, skin="black", error=gx.cout_graph_p2(nodes_histories[0], targets))
+    img_constellation = get_mini_graph_image(nodes_histories[0], targets, dist_threshold, size=1.5, skin="constellation", error=gx.cout_graph_p2(nodes_histories[0], targets))
+
+    fig, axs = plt.subplots(1, 4, figsize=(12, 4))
+    axs[0].imshow(img_default)
+    axs[0].set_title("default")
+    axs[1].imshow(img_stick)
+    axs[1].set_title("stick")
+    axs[2].imshow(img_black)
+    axs[2].set_title("black")
+    axs[3].imshow(img_constellation)
+    axs[3].set_title("constellation")
+    for ax in axs:
+        ax.axis('off')
+    plt.tight_layout()
+    plt.show()
+
+
+
+if __name__ == "__main__" and False:
     # targets = np.array([
     #     np.array([0,0]),
     #     np.array([3,0]),
     #     np.array([0,3]),
-    #     np.array([1.2,1.2]),
-        
+    #     np.array([3,4]),
+    #     np.array([3.2,3.4]),
+    #     np.array([1.5,2.2]),
+    #     np.array([3.8,1.2]),
     # ]).astype(np.float32)
+    
+    targets = np.array([
+        np.array([0,0]),
+        np.array([3,0]),
+        np.array([0,3]),
+        np.array([3,4]),
+    ]).astype(np.float32)
+
+    # nodes at the barycenter of the targets
+    nodes = np.array([[np.mean(targets[:, 0]), np.mean(targets[:, 1])]] * len(targets))
 
     dist_threshold = 1.1
 
+    graphs_histories = gx.optimize_nodes_history_parallel(nodes, targets, dist_threshold, 0.1, 10000,10,False)
 
-
-    # results, histories = ec.multicalc_optimal_graph(targets, dist_threshold, ec.cout_snt, 2, 
-    #     ngraphs=100, 
-    #     steps=10000, 
-    #     mutation_stepsize=0.01,
-    #     sampling_size=1,
-    #     use_genetic_sampling=True,
-    # )
-    # # plot_history_trace(histories[0], targets, "results/history/trace.png",steps_per_frame=30)
-    # # plot_history_trace_tilemap(histories, targets, "results/history/tilemap.png",sorted_by_error=True)
-
-    import graphx as gx # type: ignore
-
-
-    nodes = np.array([[np.mean(targets[:, 0]), np.mean(targets[:, 1])]] * len(targets))
-
-
-    # history = gx.optimize_nodes_history(nodes, targets, dist_threshold, 0.01, 100000, False, True)
-    # plot_history_gif(history, targets, "results/history/gif","map.gif",0.01,steps_per_frame=1000)
-    # plot_history_trace(history, targets, "results/history/trace","trace.png",steps_per_frame=1)
-
-
-    # histories = gx.optimize_nodes_history_parallel_old(nodes, targets, dist_threshold, 0.001, 100000, 100)
-    # plot_history_gif_tilemap(histories, targets, "results/history/gif","tilemap.gif",sorted_by_error=True,steps_per_frame=10000,show_trace=False)
-
-    # start_time = time.time()
-    # graphs = gx.optimize_nodes_parallel_v2(nodes, targets, dist_threshold, 0.01, 100000, 100)
-    # end_time = time.time()
-    # print(f"Temps d'exécution (parallèle) : {end_time - start_time} secondes")
-
-    # start_time = time.time()
-    # histories = gx.optimize_nodes_parallel_workstealing(nodes, targets, dist_threshold, 0.01, 100000, 100)
-    # end_time = time.time()
+    gd,gh = histories_to_shapes_dict_and_transition_history(graphs_histories, targets, dist_threshold)
+    gd,gh = filter_shapes_dict(gd, gh, lambda shape_key, info: info['score'] < 3.2)
 
 
 
-    # print(f"Temps d'exécution (historique) : {end_time - start_time} secondes")
-    # plot_history_gif_tilemap(histories, targets, "results/history/gif","tilemap.gif",sorted_by_error=True,steps_per_frame=10000,show_trace=False)
-
-
-    # print(gx.get_shape(histories[0][-1], dist_threshold))
-    # shapes = get_shapes_from_histories(histories)
-    # shape_histogram(shapes)
-    # plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, "results/history/shapes_2", scale_nodes=20, figsize_per_row=(7, 4))
-
-    # ===== VERSION PARALLÈLE (hybrid) =====
-
-    # graphs = gx.optimize_nodes_parallel_workstealing(nodes, targets, dist_threshold, 0.01, 100000, 1000)
-    # plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, "results/history/shapes_3", scale_nodes=20, figsize_per_row=(7, 4))
-
-    # start_time = time.time()
-    # opti_nodes = gx.optimize_nodes(nodes, targets, dist_threshold, 0.01, 10000000)
-    # end_time = time.time()
-    # print(f"Temps d'exécution (inplace) : {end_time - start_time} secondes")
-
-    # start_time = time.time()
-    # opti_nodes = gx.optimize_nodes(nodes, targets, dist_threshold, 0.01, 10000000)
-    # end_time = time.time()
-    # print(f"Temps d'exécution (non inplace) : {end_time - start_time} secondes")
-
-
-
-    # histories = gx.optimize_nodes_history_parallel(nodes, targets, dist_threshold, 0.01, 10000,100)
-    # plot_history_gif_tilemap(histories, targets, "results/history/gif","tilemae_test.gif",sorted_by_error=True,steps_per_frame=1000,show_trace=False)
-
-
-
-    # n = 1000000
-    # history = gx.optimize_nodes_history(nodes, targets, dist_threshold, 0.01, n,False,False)
-    # plot_history_trace(history, targets, "results","trace_test.png",steps_per_frame=10)
-
-    # print(gx.cout_graph_p2(history[0], targets))
-    # print(gx.cout_graph_p2(history[len(history)//2], targets))
-    # print(gx.cout_graph_p2(history[-1], targets))
-
-
-
-    # parallel tilemap
-    # graphs = gx.optimize_nodes_parallel(nodes, targets, dist_threshold, 0.1, 10000,10,False)
-    # print("now plotting...")
-    # plot_shape_error_histograms_with_best_graph(graphs, targets, dist_threshold, "results/history/shapes_8", 
-    # scale_nodes=30, 
-    # n_bins=50, 
-    # multicolor_nodes=True, 
-    # target_marker='x',
-    # target_color=(1,0,0,0.3),
-    # target_scale=20,
-    # node_use_cmap=True,
-    # target_same_color=True,
-    # node_cmap='hsv',
-    # node_marker='o',)
-
-
-    # history = gx.optimize_nodes_history(nodes, targets, dist_threshold, 0.1, 1000000,False,False)
-    # shape_evolution_plot(history, targets, dist_threshold, "results/history/shapes_9", scale_nodes=30, figsize_per_shape=(4, 4), show_error=True, only_first_occurrence=True)
-
-
-    graphs_histories = gx.optimize_nodes_history_parallel(nodes, targets, dist_threshold, 0.1, 10000,1,False)
-
-    # Appel de la nouvelle fonction pour afficher le graphe des transitions de shapes
-    plot_shape_transition_graph_with_mini_graphs(graphs_histories, targets, dist_threshold, spring_k=1.0)
-
-
-
-
-
-
+    plot_shape_frise_with_transitions(gd, gh, targets, dist_threshold, 
+    figsize=(12, 4), 
+    mini_graph_size=1.5, 
+    mini_graph_zoom=0.5, 
+    y=0, 
+    show_error=True, 
+    margin=0.5, 
+    font_size=10, 
+    arrow_style='-|>', 
+    arrow_color='gray', 
+    node_outline_color='black', 
+    node_outline_width=1, 
+    node_box_color='yellow', 
+    error_fmt='{:.2f}',
+    zigzag_amplitude=0.8,
+    zigzag=True,
+    )
