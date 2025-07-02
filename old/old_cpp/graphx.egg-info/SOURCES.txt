@@ -1,0 +1,6 @@
+graphx.cpp
+setup.py
+graphx.egg-info/PKG-INFO
+graphx.egg-info/SOURCES.txt
+graphx.egg-info/dependency_links.txt
+graphx.egg-info/top_level.txt

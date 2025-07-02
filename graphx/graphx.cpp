@@ -14,8 +14,8 @@
 #include <unordered_map>
 
 
-void version(){
-    std::cout << "graphx version 0.1.0" << std::endl;
+std::string version(){
+    return "graphx version 0.1.2";
 }
 
 // pour ne pas avoir à récupérer les informations de l'array à chaque fois
@@ -100,7 +100,7 @@ pybind11::array_t<int> get_adjacency_matrix(pybind11::array_t<double> nodes, dou
         double* pi = nodes_info.get_point(i);
         for (size_t j = 0; j < n; ++j) {
             double* pj = nodes_info.get_point(j);
-            adj_buf[i * adj_stride + j] = (distance_squared(pi, pj) < threshold_sq) ? 1 : 0;
+            adj_buf[i * adj_stride + j] = (distance_squared(pi, pj) <= threshold_sq) ? 1 : 0;
         }
     }
     return adj;
@@ -1052,9 +1052,11 @@ pybind11::dict decompose_history_by_shape(const std::vector<pybind11::array_t<do
 
 
 
+
 // ===== MODULE PYBIND11 =====
 
 PYBIND11_MODULE(graphx, m) {
+    m.def("version", &version, "Retourne la version du module");
     m.def("distance", &distance, "Distance entre deux points");
     m.def("is_connected", &is_connected, "Vérifie si deux points sont connectés");
     m.def("is_graph_connected_bfs", &is_graph_connected_bfs, "Vérifie si un graph est connecté");

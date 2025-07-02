@@ -5,8 +5,4 @@ import numpy as np
 
 
 
-
-
-
-
-
+print(gx.version())
