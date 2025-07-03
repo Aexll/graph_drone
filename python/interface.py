@@ -5,9 +5,12 @@ import getimg as gi
 from spectral import histories_to_shapes_dict_and_transition_history, spectral_decomposition, filter_shapes_dict
 from getimg import get_mini_graph_image
 from getimg import SKINS
+import json
+import os
 
 
 class GraphMaker:
+    SAVE_FILE = "saved_builds.json"
     def __init__(self):
         self.nodes = np.empty((0, 2))
         self.targets = np.empty((0, 2))
@@ -45,14 +48,14 @@ class GraphMaker:
         self.build_types = ["capture","genetic", "simple", "history", "parallel", "history_parallel"]
         self.builds = []
         self.selected_builds = set()
+        self.load_saved_builds()
         """
         example : 
         builds = [
             {
                 "name": "Build 1",
                 "type": "capture",
-                "nodes": List[np.array((2,))]
-                "history": List[List[np.array((2,))]]
+                "data": Object,
                 "targets": np.empty((0, 2)),
                 "dist_threshold": 200,
                 "opti_gen_stepsize": 0.1,
@@ -422,6 +425,7 @@ class GraphMaker:
             dpg.add_separator()
             dpg.add_text("Builds : ")
             self.draw_builds_table()
+            self.draw_graph()
 
         with dpg.window(label="Spectral", pos=(0, 0), width=1000, height=700, tag="spectral_window",show=False):
             pass
@@ -436,17 +440,17 @@ class GraphMaker:
         if dpg.does_item_exist("builds_table"):
             dpg.delete_item("builds_table")
         with dpg.table(parent="side_panel", tag="builds_table", header_row=True, borders_innerH=True, borders_outerH=True, borders_innerV=True, borders_outerV=True):
-            dpg.add_table_column(label="S")
-            dpg.add_table_column(label="L")
-            dpg.add_table_column(label="V")
-            dpg.add_table_column(label="Nom")
-            dpg.add_table_column(label="Type")
+            dpg.add_table_column(label="S", init_width_or_weight=30)
+            dpg.add_table_column(label="L", init_width_or_weight=30)
+            dpg.add_table_column(label="V", init_width_or_weight=30)
+            dpg.add_table_column(label="Nom", init_width_or_weight=150)
+            dpg.add_table_column(label="Type", init_width_or_weight=80)
             for i, build in enumerate(self.builds):
                 with dpg.table_row():
                     dpg.add_checkbox(
                         label="",
                         default_value=(i in self.selected_builds),
-                        callback=lambda s, a, i=i: self.toggle_build_selection(i, a)
+                        callback=self.make_toggle_selection_callback(i)
                     ) 
                     dpg.add_button(label="L", callback=self.make_load_callback(i))
                     dpg.add_button(label="V", callback=self.make_view_spectre_callback(i))
@@ -458,6 +462,12 @@ class GraphMaker:
             self.selected_builds.add(index)
         else:
             self.selected_builds.discard(index)
+        self.save_selected_builds()
+
+    def make_toggle_selection_callback(self, index):
+        def callback(sender, app_data):
+            self.toggle_build_selection(index, app_data)
+        return callback
 
     def make_load_callback(self, idx):
         def callback(sender, app_data):
@@ -495,6 +505,8 @@ class GraphMaker:
 
     def view_spectre_callback(self, idx):
         build = self.builds[idx]
+        # self.targets = build["targets"]
+        self.load_build_button_callback(idx)
         if build["type"] == "spectral":
             shapes_dict, transition_history = build["data"]
             spectral_decomposition(
@@ -513,6 +525,74 @@ class GraphMaker:
 
         if not dpg.is_item_shown("spectral_window"):
             dpg.show_item("spectral_window")
+
+    def to_serializable(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, dict):
+            return {k: self.to_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self.to_serializable(x) for x in obj]
+        elif isinstance(obj, tuple):
+            return [self.to_serializable(x) for x in obj]  # convertit aussi les tuples en listes
+        elif isinstance(obj, set):
+            return list([self.to_serializable(x) for x in obj])
+        else:
+            return obj
+
+    def save_selected_builds(self):
+        # Sauvegarde les builds sélectionnés dans un fichier JSON
+        selected_builds = []
+        for idx in self.selected_builds:
+            build = self.builds[idx]
+            build_serializable = self.to_serializable(build)
+            selected_builds.append(build_serializable)
+        try:
+            with open(self.SAVE_FILE, "w") as f:
+                json.dump(selected_builds, f)
+        except TypeError as e:
+            print("Erreur de sérialisation JSON:", e)
+            for b in selected_builds:
+                try:
+                    json.dumps(b)
+                except Exception as ex:
+                    print("Objet non sérialisable:", b)
+            raise
+
+    def load_saved_builds(self):
+        # Charge les builds sauvegardés et les ajoute à la liste
+        if os.path.exists(self.SAVE_FILE):
+            with open(self.SAVE_FILE, "r") as f:
+                try:
+                    saved_builds = json.load(f)
+                except Exception:
+                    saved_builds = []
+            for build in saved_builds:
+                # Reconversion des listes en np.array si besoin
+                build_copy = build.copy()
+                if isinstance(build_copy["targets"], list):
+                    build_copy["targets"] = np.array(build_copy["targets"])
+                if isinstance(build_copy["data"], list):
+                    # On tente de deviner la structure
+                    if build_copy["type"] in ["simple", "genetic"]:
+                        build_copy["data"] = np.array(build_copy["data"])
+                    elif build_copy["type"] in ["history", "parallel"]:
+                        build_copy["data"] = [np.array(x) for x in build_copy["data"]]
+                    elif build_copy["type"] == "history_parallel":
+                        build_copy["data"] = [ [np.array(xx) for xx in x] for x in build_copy["data"] ]
+                    elif build_copy["type"] == "spectral":
+                        formated_data_0 = {}
+                        for key, value in build_copy["data"][0].items():
+                            new_value = value.copy()
+                            new_value["graph"] = np.array(new_value["graph"])
+                            formated_data_0[key] = new_value.copy()
+                        formated_data_1 = set()
+                        for v in build_copy["data"][1]:
+                            formated_data_1.add(tuple(v))
+                        print(build_copy["targets"])
+                        build_copy["data"] = (formated_data_0, formated_data_1)
+                self.builds.append(build_copy)
+                self.selected_builds.add(len(self.builds)-1)
 
 print(gx.version())
 interface = GraphMaker()

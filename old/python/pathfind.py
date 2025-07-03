@@ -105,7 +105,8 @@ def node_step(nodes, idx, target, threshold=dist_threshold, speed=NODE_SPEED):
     """
     move the node at idx towards the target without breaking the connection
     """
-    movement =  (target - nodes[idx]) / np.linalg.norm(target - nodes[idx]) * speed 
+    # movement =  (target - nodes[idx]) / np.linalg.norm(target - nodes[idx]) * speed 
+    movement =  (target - nodes[idx]) * speed 
     for i in neighbors(nodes, idx, threshold):
         if is_critical(nodes, i, idx, threshold):
             if distance(nodes[idx] + movement, nodes[i]) > threshold:

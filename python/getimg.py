@@ -69,7 +69,7 @@ def get_mini_graph_image(nodes, targets, dist_threshold,
     if skin == "small":
         nodes_scale = 10
         scale_targets = 10
-        offset = 0.1
+        offset = 0.2
         nodes_color = 'blue'
         targets_color = 'red'
         line_width = 0.5
@@ -150,14 +150,14 @@ def get_mini_graph_image(nodes, targets, dist_threshold,
             )
         nodes_marker = 'o'
         nodes_color = 'white'
-    ax.scatter(nodes[:, 0], nodes[:, 1], color=nodes_color, s=nodes_scale, zorder=node_zorder, marker=nodes_marker)
+    ax.scatter(nodes[:, 0], nodes[:, 1], color=nodes_color, s=nodes_scale*size, zorder=node_zorder, marker=nodes_marker)
     ax.scatter(targets[:, 0], targets[:, 1], color=targets_color, zorder=3, s=scale_targets, marker=targets_marker)
     ax.set_xlim(targets[:, 0].min() - offset, targets[:, 0].max() + offset)
     ax.set_ylim(targets[:, 1].min() - offset, targets[:, 1].max() + offset)
 
     if error is not None:
         ax.text(
-            (ax.get_xlim()[0] + ax.get_xlim()[1]) / 2, ax.get_ylim()[0] - offset, f"{error:.2f}",
+            (ax.get_xlim()[0] + ax.get_xlim()[1]) / 2, ax.get_ylim()[0], f"{error:.2f}",
             fontsize=size*6,
             zorder=node_zorder+1,
             ha='center',
@@ -167,7 +167,7 @@ def get_mini_graph_image(nodes, targets, dist_threshold,
         )
     if age is not None:
         ax.text(
-            (ax.get_xlim()[0] + ax.get_xlim()[1]) / 2, ax.get_ylim()[0] - offset*3, f"{age}",
+            (ax.get_xlim()[0] + ax.get_xlim()[1]) / 2, ax.get_ylim()[0] * 2.5, f"{age}",
             fontsize=size*4,
             zorder=node_zorder+1,
             ha='center',
@@ -226,12 +226,16 @@ if __name__ == "__main__" and TEST_IMAGE:
 
     print(dict_nodes_histories[best])
     # testing get_mini_graph_image
-    img_default = get_mini_graph_image_from_dict(dict_nodes_histories[best], targets, dist_threshold, size=5, skin="default")
-    img_stick = get_mini_graph_image_from_dict(dict_nodes_histories[best], targets, dist_threshold, size=5, skin="stick")
-    img_black = get_mini_graph_image_from_dict(dict_nodes_histories[best], targets, dist_threshold, size=5, skin="black")
-    img_constellation = get_mini_graph_image_from_dict(dict_nodes_histories[best], targets, dist_threshold, size=5, skin="constellation")
+    SIZE = 2
+    img_default = get_mini_graph_image_from_dict(dict_nodes_histories[best], targets, dist_threshold, size=SIZE, skin="default")
+    img_stick = get_mini_graph_image_from_dict(dict_nodes_histories[best], targets, dist_threshold, size=SIZE, skin="stick")
+    img_black = get_mini_graph_image_from_dict(dict_nodes_histories[best], targets, dist_threshold, size=SIZE, skin="black")
+    img_constellation = get_mini_graph_image_from_dict(dict_nodes_histories[best], targets, dist_threshold, size=SIZE, skin="constellation")
 
-    fig, axs = plt.subplots(1, 4, figsize=(12, 4))
+    img_default_small = get_mini_graph_image_from_dict(dict_nodes_histories[best], targets, dist_threshold, size=SIZE/2, skin="default")
+    img_default_tiny = get_mini_graph_image_from_dict(dict_nodes_histories[best], targets, dist_threshold, size=SIZE/4, skin="default")
+
+    fig, axs = plt.subplots(1, 6, figsize=(12, 12))
     axs[0].imshow(img_default)
     axs[0].set_title("default")
     axs[1].imshow(img_stick)
@@ -240,6 +244,10 @@ if __name__ == "__main__" and TEST_IMAGE:
     axs[2].set_title("black")
     axs[3].imshow(img_constellation)
     axs[3].set_title("constellation")
+    axs[4].imshow(img_default_small)
+    axs[4].set_title("default small")
+    axs[5].imshow(img_default_tiny)
+    axs[5].set_title("default tiny")
     for ax in axs:
         ax.axis('off')
     plt.tight_layout()
