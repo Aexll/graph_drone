@@ -30,24 +30,37 @@ class World:
 
     MAP_SIZE = np.array([800, 800], dtype=np.float32)
 
-    def __init__(self, config:WorldConfiguration|None = None, parent=None, bounds:np.ndarray = None):
+    def __init__(self, config: WorldConfiguration|None = None, parent=None, bounds: np.ndarray = None):
         self.parent = parent
-        self.bounds = bounds
-        self.drones:list['Drone'] = []
-        self.targets:list['Target'] = []
+        self.bounds = bounds if bounds is not None else np.array([[0, 0], self.MAP_SIZE])
+        self.drones: list['Drone'] = []
+        self.targets: list['Target'] = []
+        
         if config:
             self.map_size = config.map_size
             self.bounds = config.bounds
-            for drone_pos,target_pos in zip(config.drones, config.targets):
-                drone = Drone(position=np.array(drone_pos), target=None, scan_for_drones_method=self.get_drones_in_range, scan_for_targets_method=self.get_targets_in_range)
-                if target_pos is not None:
-                    target = Target(position=np.array(target_pos), target_type=0, bounds=self.bounds)
-                    drone.target = target
-                    self.add_target(target)
-                self.add_drone(drone)
+            
+            # Validation des listes de configuration
+            max_len = max(len(config.drones), len(config.targets))
+            drones_list = config.drones + [None] * (max_len - len(config.drones))
+            targets_list = config.targets + [None] * (max_len - len(config.targets))
+            
+            for i, (drone_pos, target_pos) in enumerate(zip(drones_list, targets_list)):
+                if drone_pos is not None:
+                    try:
+                        drone = Drone(position=np.array(drone_pos), target=None, 
+                                    scan_for_drones_method=self.get_drones_in_range, 
+                                    scan_for_targets_method=self.get_targets_in_range)
+                        if target_pos is not None:
+                            target = Target(position=np.array(target_pos), target_type=0, bounds=self.bounds)
+                            drone.target = target
+                            self.add_target(target)
+                        self.add_drone(drone)
+                    except Exception as e:
+                        print(f"Error creating drone {i}: {e}")
 
-        self.global_time:float = 0.0
-        self.delta_time:float = 0.08  # Time step for updates, can be adjusted as needed
+        self.global_time: float = 0.0
+        self.delta_time: float = 0.08  # Time step for updates, can be adjusted as needed
 
 
     def draw(self, draw_list):
@@ -68,13 +81,28 @@ class World:
     def add_target(self, target:Target):
         self.targets.append(target)
 
-    def remove_drone(self, idx:int):
-        drone = self.drones.pop(idx)
-        drone.__del__()
-        del drone  # Remove reference to the drone
+    def remove_drone(self, idx: int):
+        """Remove a drone by index with proper error handling."""
+        if 0 <= idx < len(self.drones):
+            drone = self.drones.pop(idx)
+            # Nettoyer les connexions du drone avant suppression
+            for connection in drone.connections.copy():
+                drone.remove_connection(connection)
+            drone.__del__()
+            del drone
+        else:
+            print(f"Error: Invalid drone index {idx}. Valid range: 0-{len(self.drones)-1}")
 
-    def remove_target(self, idx:int):
-        self.targets.pop(idx)
+    def remove_target(self, idx: int):
+        """Remove a target by index with proper error handling."""
+        if 0 <= idx < len(self.targets):
+            target = self.targets.pop(idx)
+            # Supprimer les références au target dans les drones
+            for drone in self.drones:
+                if drone.target == target:
+                    drone.target = None
+        else:
+            print(f"Error: Invalid target index {idx}. Valid range: 0-{len(self.targets)-1}")
 
     def add_drone_with_target(self, drone:Drone, target:Target):
         """Add a drone with a target."""
@@ -88,14 +116,17 @@ class World:
             self.add_target(target)
     
     def generate_random_drone(self) -> Drone:
-        position = np.random.rand(2) * self.MAP_SIZE[1]
-        return Drone(position=position, target=None, scan_for_drones_method=self.get_drones_in_range, scan_for_targets_method=self.get_targets_in_range)
+        # Utiliser les bounds correctement pour générer une position
+        position = np.random.rand(2) * (self.bounds[1] - self.bounds[0]) + self.bounds[0]
+        return Drone(position=position, target=None, 
+                    scan_for_drones_method=self.get_drones_in_range, 
+                    scan_for_targets_method=self.get_targets_in_range)
 
     def generate_random_target(self) -> Target:
-        position = np.random.rand(2) * self.MAP_SIZE[1]
-        target_type = np.random.choice([0, 1])
-        bounds = np.array([[0, 0], self.MAP_SIZE])
-        return Target(position=position, target_type=target_type, bounds=bounds)
+        # Utiliser les bounds correctement pour générer une position
+        position = np.random.rand(2) * (self.bounds[1] - self.bounds[0]) + self.bounds[0]
+        target_type = np.random.choice([0, 1, 2])  # Inclure le type 2 (dynamic)
+        return Target(position=position, target_type=target_type, bounds=self.bounds)
 
     def generate_random_drone_with_target(self):
         """Generate a random drone with a target."""
@@ -173,8 +204,10 @@ if __name__ == "__main__":
         dpg.draw_triangle(pos1+offset, pos2+offset, pos3+offset,
                           color=(255, 0, 0,100), parent=draw_list)
 
-        for xied in focusing_drone.compute_xi(4):
+        for xied in focusing_drone.xi:
             xied.draw_notify("simple", draw_list=draw_list)
+
+        # print(f"xi_id : ", focusing_drone.xi_id)
         
         # delta = {}
         # for key, value in focusing_drone.compute_omega(10).items():

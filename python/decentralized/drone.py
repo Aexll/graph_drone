@@ -19,15 +19,21 @@ class Drone:
         # Drone memory 
         self.local_time:float = 0.0
 
-        self.count:int = 1 # Number of drone known to be connected to this drone, including itself  
+
+        # Network
+        self.broadcast_id:int = 0  # ID of the last broadcast, used to avoid sending the same data multiple times
 
         self.connections:list['Drone'] = []
         self.targets = None
 
+        self.count:int = 1 # Number of drone known in the network, including this one
+        self.count_id:int = 0
+
         self.xi:set = {self}
-        self.xi_n:int = 0  # Number of xi values computed, -1 means not computed yet
-        self.xi_time:float = 0.0
-        self.xi_deprecation_time:float = 100.0  # Time after which the xi value is considered deprecated (need to be recomputed)
+        # self.xi_n:int = 0  # Number of xi values computed, -1 means not computed yet
+        # self.xi_time:float = 0.0
+        # self.xi_deprecation_time:float = 10.0  # Time after which the xi value is considered deprecated (need to be recomputed)
+        self.xi_id:int = 0
 
         self.omega:dict = {self: 0}
         self.omega_n:int = 0 
@@ -69,15 +75,17 @@ class Drone:
 
         # connections
         for connection in self.connections:
-            direction = (connection.position - self.position) / np.linalg.norm(connection.position - self.position)
-            link_color = (0, 255, 0, 100)
-            if connection in self.criticality:
-                link_color = (255, 0, 0, 255) 
+            distance = np.linalg.norm(connection.position - self.position)
+            if distance > 0:  # Éviter la division par zéro
+                direction = (connection.position - self.position) / distance
+                link_color = (0, 255, 0, 100)
+                if connection in self.criticality:
+                    link_color = (255, 0, 0, 255) 
 
-            dpg.draw_line(
-                self.position + direction * self.drone_radius,
-                connection.position - direction * self.drone_radius,
-                color=link_color, parent=draw_list)
+                dpg.draw_line(
+                    self.position + direction * self.drone_radius,
+                    connection.position - direction * self.drone_radius,
+                    color=link_color, parent=draw_list)
     
     def draw_notify(self, notify="simple", draw_list=None, value=None):
         """
@@ -100,19 +108,17 @@ class Drone:
 
         self.local_time += delta_time
 
-        self.compute_criticality()
+        # self.compute_criticality()
 
-        unknown_drones = self.scan_for_unknown_drones(8)
+        unknown_drones = self.scan_for_unknown_drones()
         for drone in unknown_drones:
             if self.accept_connection(drone):
-                # new_count = drone.count + self.count
                 self.add_connection(drone)
-                # drone.update_drone_count(new_count, n=new_count)
+                break
 
+        # if len(self.connections) < 1:
+        #     self.scan_for_new_connections(nb_connections=1)
 
-
-        if len(self.connections) < 1:
-            self.scan_for_new_connections(nb_connections=1)
         if self.target is not None:
             self.move_towards_target(delta_time)
         else:
@@ -120,8 +126,12 @@ class Drone:
             pass
         pass
 
+
+
+        # debugging 
+        if self.frame_operations > 1000:
+            print(f"Drone at {self.position} performed {self.frame_operations} operations in this frame, Average: {self.total_operations / self.frame_count if self.frame_count > 0 else 0}.")
         self.total_operations += self.frame_operations
-        # print(f"Drone at {self.position} performed {self.frame_operations} operations in this frame, Average: {self.total_operations / self.frame_count if self.frame_count > 0 else 0}.")
         self.frame_count += 1
         self.frame_operations = 0  # Reset frame operations for the next frame
 
@@ -156,21 +166,30 @@ class Drone:
 
             self.position += movement
 
+
+
+    # connection management
+
     def add_connection(self, drone: 'Drone'):
-        """Add a connection to another drone. must be in range"""
+        """ Add a connection to another drone. must be in range """
         if np.linalg.norm(drone.position - self.position) > self.range:
             return
-        if drone not in self.compute_xi(n=self.count):
-            self.count += drone.count
-            self.update_drone_count(self.count, n=self.count)
-            drone.update_drone_count(self.count, n=self.count)
+        
+        self.networkize_xi() 
 
+        # Check if the drone is already in the network or if it can be added
+        if not drone in self.xi:
+            self.update_count(self.count + drone.count, count_id=max(self.count_id, drone.count_id) + 1)
+            # drone.update_count(drone.count + self.count, count_id=max(self.count_id, drone.count_id) + 1)
+        
+
+        # Ajouter la connexion avant de calculer xi pour éviter les incohérences
         if drone not in self.connections:
             self.connections.append(drone)
-        # Ensure the connection is mutual
         if self not in drone.connections:
             drone.connections.append(self)
         
+
     def remove_connection(self, drone: 'Drone'):
         """Remove a connection to another drone."""
         if drone in self.connections:
@@ -193,7 +212,7 @@ class Drone:
 
         return res
 
-    def scan_for_new_connections(self, nb_connections=1):
+    def scan_for_new_connections(self, nb_connections=1) -> list['Drone']:
         """
         Scan for new connections within range.
         nb_connections: Number of connections to establish at most.
@@ -201,43 +220,105 @@ class Drone:
         candidates = self.scan_for_drones(self.position, self.range)
         candidates = [drone for drone in candidates if drone != self and drone not in self.connections]
         candidates = sorted(candidates, key=lambda d: np.linalg.norm(d.position - self.position))
-        for drone in candidates[:nb_connections]:
-            self.add_connection(drone)
-    
-    def scan_for_unknown_drones(self, n=0) -> set:
+        # for drone in candidates[:nb_connections]:
+        #     self.add_connection(drone)
+        return candidates[:nb_connections]
+
+    def scan_for_unknown_drones(self) -> set:
         """
         Scan for unknown drones within range.
         Returns a set of drones that are not in the connections list.
         """
         candidates = self.scan_for_drones(self.position, self.range)
-        unknown_drones = set(drone for drone in candidates if drone not in self.compute_xi(n=n) and drone != self)
+        unknown_drones = set(drone for drone in candidates if drone not in self.compute_xi(n=self.count+1) and drone != self)
         return unknown_drones
 
-    def compute_xi(self, n=0, force_update=False) -> set:
+    def update_count(self, new_count: int, count_id:int=0):
+        """
+        Update the count of drones connected to this structure.
+        """
+        if self.count_id < count_id:
+            self.count_id = count_id
+            self.count = new_count
+            for connection in self.connections:
+                connection.update_count(new_count, count_id=count_id)
+    
+
+
+    # network operations
+
+    def broadcast(self, data: dict, id:int=0 , n=0):
+        """
+        Broadcast data to all connected drones.
+        """
+        if self.broadcast_id == id:
+            return
+        self.broadcast_id = id
+        self.receive_data(data)
+        if n <= 0:
+            return
+        for drone in self.connections:
+            drone.broadcast(data, id=id, n=(n-1))
+
+    def receive_data(self, data: dict):
+        """
+        Receive data from another drone.
+        This method can be overridden to handle specific data types.
+        """
+        self.frame_operations += 1
+
+        if 'count' in data:
+            self.update_count(data['count'], count_id=data.get('count_id', 0))
+        if 'xi' in data:
+            self.xi = data['xi']
+            self.xi_id = data.get('xi_id', 0)
+        
+
+
+    def compute_xi(self, n=0, id=0) -> set:
         """
         Compute the xi value for this drone.
         xi is a dictionary of the form {drone: value:bool}.
         """
         self.frame_operations += 1
-        if force_update:
-            self.xi_n = 0
-        if self.xi_time + self.xi_deprecation_time < self.local_time:
-            self.xi_n = 0
-        if self.xi_n >= n:
-            return self.xi
+        # if force_update:
+        #     self.xi_n = 0
+        # if self.xi_time + self.xi_deprecation_time < self.local_time:
+        #     self.xi_n = 0
+
+        if self.xi_id == id:
+            return self.xi.copy()
+        else:
+            self.xi_id = id
+
         if n <= 0:
             self.xi = {self}
-            self.xi_n = 0
-            self.xi_time = self.local_time
+            # self.xi_n = 0
+            # self.xi_time = self.local_time
             return self.xi
+        
+        # if self.xi_n >= n:
+        #     return self.xi
+        
         if n > 0:
             self.xi = set()
             for drone in self.connections:
-                self.xi.update(drone.compute_xi(n-1 if not force_update else 2*n, force_update=False))
+                self.xi.update(drone.compute_xi(n-1, id=id))
             self.xi.add(self)
-            self.xi_n = n
-            self.xi_time = self.local_time
+            # self.xi_n = n
+            # self.xi_time = self.local_time
             return self.xi.copy()
+    
+    def networkize_xi(self):
+        """
+        Networkize the xi value for this drone.
+        This method will broadcast the xi value to all connected drones.
+        """
+        data = {
+            'xi': self.compute_xi(n=self.count, id=self.xi_id + 1),
+            'xi_id': self.xi_id + 1,
+        }
+        self.broadcast(data, id=self.broadcast_id+1, n=self.count)
 
 
     def compute_omega(self, n=0) -> dict:
@@ -269,7 +350,7 @@ class Drone:
             return self.omega.copy()
 
 
-    def compute_delta(self, drone: 'Drone', n:int=0) -> dict:
+    def compute_delta(self, drone: 'Drone', n: int = 0) -> dict:
         """
         Compute the delta value for this drone.
         delta is a dictionary of the form {drone: value:int}.
@@ -279,18 +360,25 @@ class Drone:
         if drone not in self.connections:
             print(f"Drone {self} cannot compute delta for {drone}, not connected.")
             return {}
-        delta = self.compute_omega(n=self.count*2).copy()
-        for key, value in drone.compute_omega(n=self.count*2).items():
-            if key in delta:
-                delta[key] = delta[key] - value
-            else:
-                print(f"Warning: Drone {key} not in delta, adding with value {value}.")
-                delta[key] = value
+        
+        try:
+            delta = self.compute_omega(n=self.count*2).copy()
+            drone_omega = drone.compute_omega(n=self.count*2)
+            
+            for key, value in drone_omega.items():
+                if key in delta:
+                    delta[key] = delta[key] - value
+                else:
+                    # Valeur négative pour indiquer que ce drone n'était pas dans notre omega
+                    delta[key] = -value
 
-        self.delta[drone] = delta
-        self.delta_n[drone] = n
-        self.delta_time[drone] = self.local_time
-        return delta
+            self.delta[drone] = delta
+            self.delta_n[drone] = n
+            self.delta_time[drone] = self.local_time
+            return delta
+        except Exception as e:
+            print(f"Error computing delta between {self} and {drone}: {e}")
+            return {}
 
     def compute_criticality(self,n:int=0) -> dict:
         """
@@ -327,16 +415,11 @@ class Drone:
         # print(d1,d2, ret)
         return ret
 
-
-    def update_drone_count(self, new_count:int, n=0):
-        """
-        """
-        if n<=0:
-            self.count = new_count
-        else:
-            self.count = new_count
-            for connection in self.connections:
-                connection.update_drone_count(new_count, n=n-1)
+    def __str__(self):
+        return f"Drone(pos={self.position}, connections={len(self.connections)}, count={self.count})"
+    
+    def __repr__(self):
+        return self.__str__()
 
     # misc
 
