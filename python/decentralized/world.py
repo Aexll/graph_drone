@@ -156,8 +156,34 @@ if __name__ == "__main__":
     dpg.setup_dearpygui()
     dpg.show_viewport()
 
-    with dpg.window(label="Simulation", width=800, height=800):
+    hovered_drone = None
+
+    def on_drawlist_hover(sender, app_data, user_data):
+        """Handle hover events on the draw list."""
+        global hovered_drone
+        mouse_pos = dpg.get_mouse_pos()
+        hovered_drone = None
+        for drone in world.drones:
+            if np.linalg.norm(drone.position - np.array(mouse_pos)) < drone.drone_radius*3:
+                # print(f"Hovered over drone at {drone.position}")
+                hovered_drone = drone
+    
+    def on_drawlist_click(sender, app_data, user_data):
+        """Handle click events on the draw list."""
+        # mouse_pos = dpg.get_mouse_pos()
+        global hovered_drone
+        print(hovered_drone)
+        if hovered_drone is not None:
+            s = hovered_drone.xi()
+            # print(f"Clicked on drone at {hovered_drone.position}, xi: {s}")
+
+
+    with dpg.window(label="Simulation", width=800, height=800) as sim_window:
         draw_list = dpg.add_drawlist(width=800, height=800)
+        with dpg.item_handler_registry() as drawlist_handler_registry:
+            dpg.add_item_hover_handler(callback=on_drawlist_hover)
+            dpg.add_item_clicked_handler(callback=on_drawlist_click)
+        dpg.bind_item_handler_registry(draw_list, drawlist_handler_registry)
     
     with dpg.window(label="Controls", width=200, height=800, pos=(800, 0)):
         dpg.add_text("Controls")
@@ -193,19 +219,27 @@ if __name__ == "__main__":
 
     while dpg.is_dearpygui_running():
         dpg.delete_item(draw_list, children_only=True)
+        world.global_time += world.delta_time
         world.update()
         world.draw(draw_list)
-        world.global_time += world.delta_time
+        
+        # hovered drone
+        if hovered_drone is not None:
+            hovered_drone.draw_notify("hover", draw_list=draw_list)
+            if hovered_drone.xi is not None:
+                for xi in hovered_drone.xi:
+                    xi.draw_notify("xi", draw_list=draw_list)
+
         dpg.draw_text((10, 10), f"Global Time: {world.global_time:.2f}", color=(255, 255, 255), parent=draw_list)
 
-        trigsize = 20
-        offset = np.array([0, trigsize/3])
-        pos1, pos2, pos3 = focusing_drone.position + np.array([-trigsize, -trigsize]), focusing_drone.position + np.array([trigsize, -trigsize]), focusing_drone.position + np.array([0, trigsize*0.866])
-        dpg.draw_triangle(pos1+offset, pos2+offset, pos3+offset,
-                          color=(255, 0, 0,100), parent=draw_list)
+        # trigsize = 20
+        # offset = np.array([0, trigsize/3])
+        # pos1, pos2, pos3 = focusing_drone.position + np.array([-trigsize, -trigsize]), focusing_drone.position + np.array([trigsize, -trigsize]), focusing_drone.position + np.array([0, trigsize*0.866])
+        # dpg.draw_triangle(pos1+offset, pos2+offset, pos3+offset,
+        #                   color=(255, 0, 0,100), parent=draw_list)
 
-        for xied in focusing_drone.xi:
-            xied.draw_notify("simple", draw_list=draw_list)
+        # for xied in focusing_drone.xi:
+        #     xied.draw_notify("simple", draw_list=draw_list)
 
         # print(f"xi_id : ", focusing_drone.xi_id)
         
