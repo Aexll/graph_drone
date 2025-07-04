@@ -91,6 +91,7 @@ class DistributedNode:
     def update_xi_omega(self):
         """
         Met à jour les valeurs xi et omega selon l'algorithme distribué
+        Implémentation correcte des équations du papier
         """
         # Sauvegarder l'état précédent
         self.previous_xi = dict(self.xi)
@@ -106,13 +107,26 @@ class DistributedNode:
         
         self.known_nodes = all_known_nodes
         
-        # Mettre à jour xi et omega pour tous les nœuds connus
+        # Étape 1: Calculer xi pour tous les nœuds connus
+        new_xi = defaultdict(float)
+        new_omega = defaultdict(lambda: float('inf'))
+        
+        # Initialiser avec les valeurs actuelles
+        for node in self.known_nodes:
+            new_xi[node] = self.xi[node]
+            new_omega[node] = self.omega[node]
+        
+        # Assurer que self reste à 1.0 et 0.0
+        new_xi[self.node_id] = 1.0
+        new_omega[self.node_id] = 0.0
+        
+        # Pour chaque nœud target j
         for target_node in self.known_nodes:
             if target_node == self.node_id:
-                continue  # Skip self
-            
-            # Calculer la nouvelle valeur xi[target_node]
-            candidates = [self.xi[target_node]]  # Valeur actuelle
+                continue
+                
+            # Équation (1): xi_i,j(k+1) = max{xi_l,j(k) : l ∈ N_i ∪ {i}}
+            candidates = [self.xi[target_node]]  # xi_i,j(k)
             
             # Ajouter les valeurs des voisins
             for neighbor_id in self.neighbors:
@@ -124,38 +138,53 @@ class DistributedNode:
                         if target_node in neighbor_xi:
                             candidates.append(neighbor_xi[target_node])
             
-            # Prendre le maximum (équation 1)
-            new_xi = max(candidates)
+            # Si le target est un voisin direct, ajouter sa connectivité
+            if target_node in self.neighbors:
+                candidates.append(1.0)
             
-            # Mettre à jour omega selon l'équation 2
-            if new_xi == self.xi[target_node]:
-                # Pas de changement dans xi
-                new_omega = self.omega[target_node]
-            elif new_xi > self.xi[target_node]:
-                # xi a augmenté, recalculer la distance
+            new_xi[target_node] = max(candidates)
+        
+        # Étape 2: Calculer omega pour tous les nœuds connus
+        for target_node in self.known_nodes:
+            if target_node == self.node_id:
+                continue
+                
+            # Si xi a changé, recalculer omega
+            if new_xi[target_node] != self.xi[target_node]:
+                # Équation (2): Si xi augmente, omega = min{omega_l,j(k) + 1 : l ∈ N_i, xi_l,j(k) = xi_i,j(k+1)}
                 min_distances = []
                 
+                # Si le target est un voisin direct et xi=1, alors omega=1
+                if target_node in self.neighbors and new_xi[target_node] == 1.0:
+                    min_distances.append(1.0)
+                
+                # Chercher parmi les voisins
                 for neighbor_id in self.neighbors:
                     if neighbor_id in self.incoming_messages:
                         messages = self.incoming_messages[neighbor_id]
                         if messages:
                             latest_message = messages[-1]
+                            neighbor_xi = latest_message['xi']
                             neighbor_omega = latest_message['omega']
-                            if (target_node in neighbor_omega and 
-                                neighbor_omega[target_node] != float('inf')):
-                                min_distances.append(neighbor_omega[target_node] + 1)
+                            
+                            # Si le voisin a la même valeur xi que celle qu'on vient de calculer
+                            if (target_node in neighbor_xi and 
+                                abs(neighbor_xi[target_node] - new_xi[target_node]) < 1e-10):
+                                if (target_node in neighbor_omega and 
+                                    neighbor_omega[target_node] != float('inf')):
+                                    min_distances.append(neighbor_omega[target_node] + 1)
                 
                 if min_distances:
-                    new_omega = min(min_distances)
+                    new_omega[target_node] = min(min_distances)
                 else:
-                    new_omega = float('inf')
+                    new_omega[target_node] = float('inf')
             else:
-                # xi a diminué (cas rare, peut arriver avec des réseaux dynamiques)
-                new_omega = self.omega[target_node]
-            
-            # Mettre à jour les valeurs
-            self.xi[target_node] = new_xi
-            self.omega[target_node] = new_omega
+                # xi n'a pas changé, garder omega
+                new_omega[target_node] = self.omega[target_node]
+        
+        # Mettre à jour les valeurs
+        self.xi = new_xi
+        self.omega = new_omega
         
         # Nettoyer les messages traités
         self.incoming_messages.clear()
@@ -332,15 +361,15 @@ class DistributedNetwork:
 
 def test_distributed_algorithm():
     """
-    Teste l'algorithme distribué xi-omega
+    Teste l'algorithme distribué xi-omega avec un debug détaillé
     """
     print("=== TEST DE L'ALGORITHME DISTRIBUÉ XI-OMEGA ===\n")
     
-    # Créer un graphe simple
+    # Créer un graphe simple pour tester
     G = nx.Graph()
-    G.add_edges_from([(1, 2), (2, 3), (3, 4), (4, 5), (5, 6)])
+    G.add_edges_from([(1, 2), (2, 3), (3, 4), (4, 5)])
     
-    print("Graphe de test: chemin 1-2-3-4-5-6")
+    print("Graphe de test: chemin 1-2-3-4-5")
     print(f"Nœuds: {sorted(G.nodes())}")
     print(f"Arêtes: {sorted(G.edges())}")
     
@@ -351,22 +380,55 @@ def test_distributed_algorithm():
     print("\n--- ÉTAT INITIAL ---")
     network.print_network_state()
     
-    # Simuler l'algorithme
-    print("\n--- SIMULATION DE L'ALGORITHME ---")
-    iterations = network.simulate_until_convergence(max_iterations=20)
+    # Simuler l'algorithme étape par étape avec debug
+    print("\n--- SIMULATION DÉTAILLÉE ---")
+    for i in range(8):  # Assez d'itérations pour la convergence
+        print(f"\n>>> ITÉRATION {i+1} <<<")
+        
+        # Phase 1: Afficher les messages envoyés
+        print("Messages envoyés:")
+        all_messages = {}
+        for node_id, node in network.nodes.items():
+            messages = node.prepare_messages()
+            all_messages[node_id] = messages
+            if messages:
+                print(f"  Nœud {node_id} -> {list(messages.keys())}")
+        
+        # Phase 2: Distribuer les messages
+        for sender_id, messages in all_messages.items():
+            for receiver_id, message in messages.items():
+                if receiver_id in network.nodes:
+                    network.nodes[receiver_id].receive_message(sender_id, message)
+        
+        # Phase 3: Mettre à jour
+        for node in network.nodes.values():
+            node.update_xi_omega()
+        
+        # Afficher l'état après cette itération
+        print(f"État après itération {i+1}:")
+        for node_id in sorted(network.nodes.keys()):
+            node = network.nodes[node_id]
+            print(f"  Nœud {node_id}: connaît {sorted(node.known_nodes)}, xi={dict(node.xi)}")
+        
+        # Vérifier convergence
+        converged = all(node.has_converged() for node in network.nodes.values())
+        if converged:
+            print(f"\n*** CONVERGENCE ATTEINTE après {i+1} itérations ***")
+            break
     
     # État final
-    print(f"\n--- ÉTAT FINAL (après {iterations} itérations) ---")
+    print(f"\n--- ÉTAT FINAL ---")
     network.print_network_state()
     
-    # Test avec un graphe plus complexe
+    # Test avec un graphe en étoile
     print("\n" + "="*60)
-    print("Test avec un graphe plus complexe (graphe en étoile)")
+    print("Test avec un graphe en étoile (nœud central: 0)")
     
-    G2 = nx.star_graph(4)  # Étoile avec 5 nœuds
+    G2 = nx.star_graph(4)  # Étoile avec nœud central 0 et 4 branches
     network2 = DistributedNetwork(G2)
     
     print(f"\nGraphe en étoile: {sorted(G2.edges())}")
+    print("\nSimulation rapide:")
     iterations2 = network2.simulate_until_convergence(max_iterations=10)
     
     print(f"\n--- ÉTAT FINAL DU GRAPHE EN ÉTOILE ---")
