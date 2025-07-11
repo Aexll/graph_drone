@@ -1,0 +1,75 @@
+
+algorithme de suppression s'arrêtes dans un graphe sans caser la conectivité local
+---
+
+voici le comportement des noeuds de façon indépendante :
+
+chaques noeuds à en mémoire :
+id : identifiant unique du noeud
+voisins : { ensemble des noeuds voisins }
+unlock_set = { set contenant les drone à qui on a envoyé un message de lock, en attendant une réponse unlock }
+stored_edge = None : arrête sur laquelle le noeud se conecentre
+stored_id = None : nombre unique associer à la stored_edge
+state = LOCKED | FREE | BREAK
+pending_messages = { set des messages qui serons envoyer l'or du prochains pas de temps }
+recived_messages = { set des messages ayant été reçus au pas de temps actuelle }
+
+
+les message sont de la forme suivante :
+
+MSG:
+type = LOCK | UNLOCK
+sender = id de noeud ayant envoyé le message
+id = id unique associer à l'arête
+edge = arête en question
+
+nous noterons LOCK(sender, id, edge)
+UNLOCK( ... ) par souci de notation
+
+routine à chaque pas de temps :
+
+on répartie les messages dans des sets de messages ayant le même type :
+Um : set des messages UNLOCK reçus
+Lm : set des messages LOCK reçus
+on note mx le message de blockage maximum du set Lm (etant donnée une relation d'ordre total sur les id des arêtes) si Lm est non vide
+
+si state = FREE : {
+    si Lm est non vide : { 
+        state <- LOCK
+        stored_edge <- mx.edge
+        stored_id <- mx.id
+        unlock_set <- {}
+        pour tout les voisins v sans mx.sender {
+            unlock_set.add(v.id)
+            v.pending_messages.add(mx)
+        }
+    }
+}
+si state = LOCKED :{
+    pour tout m dans Um: {
+        si m.edge = stored_edge et m.sender dans unlock_set {
+            unlock_set.remove(m.sender)
+            si unlock_set.empty() {
+                state <- FREE
+                pour tout les voisins v privés de mx.sender {
+                    v.pending_messages.add(UNLOCK(id, stored_edge, stored_id))
+                }
+            }
+        }
+    }
+    
+}
+si state = LOCKED ou state = BREAK : {
+    pour tout m dans Lm: {
+        on renvoie un message de UNLOCK à tout ceux qui ont envoyé un message de LOCK
+        m.sender.pending_messages.add(UNLOCK(id, m.id, m.edge))
+    }
+}
+si state = BREAK {
+    si il existe dans Lm un message m tel que m.id = stored_id {
+       le noeud supprime l'arrête stored_edge qu'il stockait
+       puis on renvoie un message de UNLOCK au noeud m.sender
+        state <- FREE
+         
+    }
+}

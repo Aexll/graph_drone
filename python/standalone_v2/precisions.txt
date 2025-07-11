@@ -1,0 +1,109 @@
+Pour recréer l'algorithme de détection des arêtes critiques, une personne totalement externe à la situation aurait besoin de comprendre les étapes suivantes en détail :
+
+**Objectif Général :** Identifier les arêtes (liens) dans un réseau non orienté dont la suppression entraînerait la déconnexion du réseau. [cite_start]L'approche est entièrement distribuée, ce qui signifie que chaque nœud (point) du réseau collabore sans autorité centrale[cite: 7].
+
+**Connaissances Préalables Requises :**
+* **Réseau non orienté ($\mathcal{G}=(\mathcal{N},\mathcal{E})$) :** Un ensemble de nœuds $\mathcal{N}$ (numérotés de 1 à $n$) et un ensemble d'arêtes $\mathcal{E}$ les reliant. [cite_start]Si une arête existe entre le nœud $i$ et le nœud $j$, elle peut être traversée dans les deux sens[cite: 38].
+* [cite_start]**Voisins ($\mathcal{N}_{i}$):** Pour un nœud $i$, c'est l'ensemble des nœuds directement connectés à $i$ par une arête[cite: 39].
+* **Chemin :** Une séquence d'arêtes reliant deux nœuds.
+* [cite_start]**Connectivité :** Un réseau est connecté si chaque paire de nœuds est reliée par au moins un chemin[cite: 40].
+* [cite_start]**Cycle :** Un chemin fermé qui revient au nœud de départ sans repasser par la même arête[cite: 42].
+* [cite_start]**Arête critique (ou pont) :** Une arête dont la suppression rend le réseau déconnecté[cite: 43].
+* [cite_start]**Connectivité d'arête :** Le nombre minimum d'arêtes à retirer pour déconnecter le réseau[cite: 46]. Une connectivité de 1 signifie au moins une arête critique ; [cite_start]2 ou plus signifie pas d'arêtes critiques[cite: 47].
+
+**Hypothèses (très importantes pour la recréation) :**
+* [cite_start]Chaque nœud a un index unique de 1 à $n$[cite: 51].
+* [cite_start]Chaque nœud connaît l'index de ses voisins directs et le nombre total de nœuds ($n$)[cite: 52].
+* [cite_start]Un nœud peut établir une nouvelle arête avec un autre nœud en communiquant avec ses voisins et en échangeant des adresses réseau[cite: 53].
+* [cite_start]Les algorithmes doivent se terminer en un nombre fini d'étapes[cite: 49].
+* [cite_start]L'information globale du graphe est construite progressivement par des processus distribués, chaque nœud accumulant des informations via ses voisins locaux[cite: 54, 55].
+
+**L'Algorithme de Détection des Arêtes Critiques (Algorithme 3) :**
+
+Cet algorithme est une partie de la méthode globale et se déroule en 2 étapes, après que les algorithmes précédents (Algorithmes 1 et 2) ont été exécutés. [cite_start]Au total, cela représente $(2n+2)$ étapes[cite: 125].
+
+**Pré-requis (Algorithmes 1 et 2) :**
+
+Pour que l'algorithme 3 fonctionne, il faut que les nœuds aient déjà exécuté les algorithmes 1 et 2.
+
+* [cite_start]**Algorithme 1 (Identification Distribuée de la Structure Voisine du Nœud) :** [cite: 64]
+    * [cite_start]**But :** Estimer la connectivité du réseau et déterminer la structure voisine, y compris la distance de chaque nœud à tous les autres nœuds du réseau[cite: 60].
+    * **Variables d'état pour chaque nœud $i$ :**
+        * [cite_start]$\xi_{i}(k) = [\xi_{i,1}(k), \dots, \xi_{i,n}(k)]^{T} \in \mathbb{R}^{n}$ : Estimation par le nœud $i$ de ses in-voisins (qui peut atteindre qui)[cite: 64].
+        * [cite_start]$\omega_{i}(k) = [\omega_{i,1}(k), \dots, \omega_{i,n}(k)]^{T} \in \mathbb{R}^{n}$ : Estimation par le nœud $i$ de la structure de ses voisins (distances minimales)[cite: 64].
+    * [cite_start]**Conditions initiales ($k=0$) :** [cite: 71, 72, 73]
+        * $\xi_{i,j}(0) = 1$ si $j=i$, et $0$ sinon. (Chaque nœud ne connaît que lui-même).
+        * $\omega_{i,j}(0) = 0$ si $j=i$, et $\infty$ sinon. (La distance à soi-même est 0, les autres sont inconnues).
+    * [cite_start]**Lois de mise à jour (pour chaque itération $k=0, \dots, (n-1)$) :** [cite: 66, 67, 68, 69]
+        * **Mise à jour de $\xi_{i,j}(k+1)$ (connectivité) :**
+            $\xi_{i,j}(k+1) = \max_{l \in \mathcal{N}_{i} \cup \{i\}} \xi_{l,j}(k)$
+            * *Signification :* Le nœud $i$ met à jour son estimation $\xi_{i,j}$ pour le nœud $j$ en prenant le maximum des valeurs $\xi_{l,j}(k)$ de ses propres voisins $l$ (y compris lui-même). Si l'un de ses voisins savait que $j$ était atteignable, $i$ le saura aussi.
+        * **Mise à jour de $\omega_{i,j}(k+1)$ (distances) :**
+            $\omega_{i,j}(k+1) = \begin{cases} \omega_{i,j}(k) & \text{si } \xi_{i,j}(k+1) = \xi_{i,j}(k) \\ \min_{l \in \mathcal{N}_{i}}(\omega_{l,j}(k)+1) & \text{si } \xi_{i,j}(k+1) > \xi_{i,j}(k) \end{cases}$
+            * *Signification :* Si $\xi_{i,j}(k+1)$ n'a pas changé (pas de nouvelle information de connectivité), $\omega_{i,j}(k+1)$ reste la même. Si $\xi_{i,j}(k+1)$ a changé (nouvelle atteignabilité de $j$), alors $\omega_{i,j}(k+1)$ est mise à jour avec la plus courte distance trouvée parmi les voisins, en ajoutant 1 à leur distance respective.
+    * **Résultat après $n$ étapes :**
+        * [cite_start]Chaque nœud $i$ a les distances les plus courtes $\omega_{i,j}(n)$ vers tous les autres nœuds $j$[cite: 78, 88, 90].
+        * [cite_start]Le réseau $G$ est connecté si et seulement si tous les $\xi_{i,j}(n)$ sont non nuls pour tout $j \in \mathcal{N}$[cite: 79].
+
+* [cite_start]**Algorithme 2 (Algorithme Distribué pour Assurer la Connectivité) :** [cite: 105]
+    * [cite_start]**But :** Assurer la connectivité du réseau en ajoutant des arêtes si le réseau initial n'est pas connecté[cite: 61, 107].
+    * [cite_start]**Mise en œuvre :** Cet algorithme modifie la loi de mise à jour $\omega_{i,j}(k+1)$ (loi (5) dans le papier) pour les étapes $k=n, \dots, (2n-1)$[cite: 106].
+    * [cite_start]**Détection de non-connectivité :** Après $n$ étapes de l'algorithme 1, si pour un nœud $i$, il existe un nœud $j$ tel que $\xi_{i,j}(n)=0$, alors le nœud $i$ sait que le réseau n'est pas connecté[cite: 111, 112].
+    * **Processus d'ajout d'arête :**
+        1.  [cite_start]Identifier $i^{*} = \max\{j \mid \xi_{i,j}(n)=1\}$ : le nœud avec l'indice le plus élevé parmi les voisins connectés[cite: 113, 114].
+        2.  [cite_start]Identifier $j^{*} = \max\{j \mid \xi_{i,j}(n)=0\}$ : le nœud avec l'indice le plus élevé qui n'est pas dans ses voisins connectés[cite: 115, 116].
+        3.  [cite_start]Une nouvelle arête est ajoutée entre $i^{*}$ et $j^{*}$[cite: 117].
+    * [cite_start]**Durée :** Dans le pire des cas, $n-1$ étapes pour assurer la connectivité[cite: 119]. [cite_start]Les lois (5) et (1) doivent s'exécuter jusqu'à $k=2n$ pour garantir que chaque nœud reconnaisse la connectivité[cite: 120].
+
+**C. [cite_start]Algorithme de Détermination Distribuée des Arêtes Critiques (Algorithme 3) :** [cite: 124]
+
+* [cite_start]**Exécution :** Cet algorithme prend 2 étapes supplémentaires, s'ajoutant aux $2n$ étapes des algorithmes précédents, pour un total de $(2n+2)$ étapes[cite: 125].
+* [cite_start]**Mesure clé : $\Delta_{i}^{(il)}$** [cite: 126, 127]
+    * Pour chaque nœud $i$ et chacun de ses voisins directs $l \in \mathcal{N}_{i}^{(1)}$ (voisins de premier ordre), calculer un vecteur $\Delta_{i}^{(il)} = [\Delta_{i,1}^{(il)}, \dots, \Delta_{i,n}^{(il)}]^{T}$.
+    * [cite_start]Chaque composante $\Delta_{i,j}^{(il)}$ est définie comme : $\Delta_{i,j}^{(il)} = \omega_{i,j}(n) - \omega_{l,j}(n)$[cite: 128].
+    * *Signification de $\Delta_{i,j}^{(il)}$ :* Représente la différence entre la distance la plus courte de $i$ à $j$ ($\omega_{i,j}(n)$) et la distance la plus courte de $l$ à $j$ ($\omega_{l,j}(n)$) après $n$ itérations de l'algorithme 1.
+        * [cite_start]Dans un réseau connecté non orienté, $\Delta_{i,j}^{(il)}$ ne peut être que $-1$, $0$, ou $1$[cite: 131].
+        * [cite_start]$-1$ : $j$ est plus proche de $i$ que de $l$[cite: 131].
+        * [cite_start]$1$ : $j$ est plus proche de $l$ que de $i$[cite: 131].
+        * [cite_start]$0$ : $j$ est équidistant de $i$ et $l$[cite: 132].
+
+* [cite_start]**Lemme 1 (Critère pour les chemins alternatifs/cycles) :** [cite: 134]
+    * [cite_start]Une arête $e_{il}$ n'est *pas* critique (c'est-à-dire qu'il existe des chemins alternatifs entre $i$ et $l$ qui ne passent pas par $e_{il}$, formant ainsi un cycle) si et seulement si au moins l'une des deux conditions suivantes est vraie pour un certain nœud $j$ (qui peut inclure $k$ lui-même et se trouver dans le cycle pertinent) : [cite: 134, 135]
+        1.  [cite_start]**Le nœud $j$ est équidistant de $i$ et $l$ :** $\Delta_{i,j}^{(il)} = 0$[cite: 136, 137].
+            * *Interprétation :* Si un nœud $j$ est à la même distance de $i$ et de $l$, cela implique qu'il existe un chemin de $i$ à $j$ et un chemin de $l$ à $j$ de même longueur, et ces chemins ne peuvent pas tous deux passer par $e_{il}$ si $e_{il}$ est la seule connexion. Cela signifie qu'il y a un chemin alternatif entre $i$ et $l$ via $j$.
+        2.  [cite_start]**Il existe des nœuds $i^{\prime}\in\mathcal{N}_{i}$ et $l^{\prime}\in\mathcal{N}_{l}$ tels que :** $\Delta_{i,j}^{(il)}\ne0, \Rightarrow \Delta_{i,j}^{(ii^{\prime})}=\Delta_{l,j}^{(ll^{\prime})}=1$[cite: 138, 139, 140, 141].
+            * [cite_start]*Interprétation :* Cette condition indique que $j$ est sur un chemin qui connecte $i$ et $l$ via leurs voisins $i^{\prime}$ et $l^{\prime}$, formant un cycle incluant $e_{il}$[cite: 142]. Cela signifie que $j$ est plus proche de $i$ via $i^{\prime}$ et plus proche de $l$ via $l^{\prime}$, et que ces chemins convergent vers $j$.
+
+* [cite_start]**Théorème 2 (Critère de Détection d'Arête Critique) :** [cite: 161]
+    * [cite_start]Une arête $e_{il}$ est une arête critique si et seulement si (c'est la négation du Lemme 1) : [cite: 162, 163, 164]
+        * Pour *chaque* nœud $j \in \mathcal{N}$ et pour *tous* les nœuds adjacents $i^{\prime} \in \mathcal{N}_{i}$ et $l^{\prime} \in \mathcal{N}_{l}$, la condition suivante est remplie :
+            [cite_start]$\Delta_{i,j}^{(il)} \ne 0 \quad \text{et} \quad \{\Delta_{i,j}^{(ii^{\prime})}, \Delta_{l,j}^{(ll^{\prime})}\} \ne \{1,1\}$[cite: 164].
+    * *Interprétation :*
+        * $\Delta_{i,j}^{(il)} \ne 0$ signifie qu'aucun nœud $j$ n'est équidistant de $i$ et $l$. Cela suggère qu'il n'y a pas de chemin alternatif "au milieu" de $i$ et $l$.
+        * $\{\Delta_{i,j}^{(ii^{\prime})}, \Delta_{l,j}^{(ll^{\prime})}\} \ne \{1,1\}$ signifie qu'il n'existe pas de chemin alternatif via les voisins directs $i'$ et $l'$ qui formeraient un cycle incluant $e_{il}$.
+        * Si ces deux conditions sont toujours vraies pour toutes les combinaisons possibles de $j$, $i'$, et $l'$, cela signifie qu'il n'y a *aucun* chemin alternatif entre $i$ et $l$ qui ne passe pas par $e_{il}$. Par conséquent, $e_{il}$ est une arête critique.
+
+* **Processus par Nœud (pour l'Algorithme 3) :**
+    1.  [cite_start]Chaque nœud $i$ doit avoir les valeurs $\omega_{i,j}(n)$ (distances à tous les autres nœuds) et $\omega_{l,j}(n)$ (distances de ses voisins $l$ à tous les autres nœuds), obtenues après l'exécution de l'Algorithme 1 (qui se termine à l'étape $n$) et l'Algorithme 2 (qui se termine à l'étape $2n$)[cite: 121, 125, 130].
+    2.  [cite_start]Pour chaque arête $e_{il}$ dont le nœud $i$ est une extrémité (c'est-à-dire pour chaque $l \in \mathcal{N}_{i}$), le nœud $i$ calcule $\Delta_{i,j}^{(il)}$ pour tous les $j \in \mathcal{N}$[cite: 128, 216].
+    3.  [cite_start]Ensuite, pour chaque arête $e_{il}$, le nœud $i$ vérifie la condition du Théorème 2 : [cite: 162, 163, 164]
+        * Il doit s'assurer que pour *tous* les $j$ dans le réseau, et pour *tous* les voisins $i^{\prime}$ de $i$ et $l^{\prime}$ de $l$, la condition $\Delta_{i,j}^{(il)} \ne 0$ et $\{\Delta_{i,j}^{(ii^{\prime})}, \Delta_{l,j}^{(ll^{\prime})}\} \ne \{1,1\}$ est vraie.
+        * Si c'est le cas, l'arête $e_{il}$ est identifiée comme critique par le nœud $i$.
+    4.  [cite_start]Chaque nœud $i$ compile un ensemble de ses arêtes critiques associées, noté $\mathcal{N}_{i}^{c} \subset \mathcal{N}_{i}$[cite: 179].
+
+**Exemple de fonctionnement (basé sur le papier) :**
+
+[cite_start]Considérons l'exemple du réseau $\mathcal{G}_{1}$ en Figure 1(a)[cite: 175]. Supposons que nous voulions vérifier si l'arête $e_{4,5}$ est critique pour le nœud 4.
+
+1.  **Calcul de $\Delta$ :** Après l'exécution de l'Algorithme 1, les valeurs $\omega_{4}(8)$ et $\omega_{5}(8)$ (les distances les plus courtes depuis les nœuds 4 et 5 respectivement) sont disponibles pour chaque nœud $j$.
+    * [cite_start]Pour le nœud 4 et son voisin 5, on calcule $\Delta_{4}^{(45)} = \omega_{4}(n) - \omega_{5}(n)$[cite: 176].
+    * [cite_start]Le papier donne $\Delta_{4}^{(45)} = [-1,-1,-1, -1, 1, 1, 1, 1]^{T}$[cite: 176].
+    * [cite_start]Le papier donne également $\Delta_{4}^{(41)}=[1,0,-1,-1,-1,-1,-1,-1,-1]^{T}$[cite: 176].
+    * [cite_start]Et $\Delta_{5}^{(56)}=[-1,-1,-1,-1,-1,-1,1,1,1]^{T}$[cite: 176].
+
+2.  **Application du Théorème 2 (Condition (9)) :**
+    * Pour que $e_{4,5}$ soit critique, il faut que pour *chaque* nœud $j$ et pour *tous* les voisins $i^{\prime}$ de 4 et $l^{\prime}$ de 5, la condition $\Delta_{4,j}^{(45)} \ne 0$ ET $\{\Delta_{4,j}^{(4i^{\prime})}, \Delta_{5,j}^{(5l^{\prime})}\} \ne \{1,1\}$ soit satisfaite.
+    * [cite_start]Le papier affirme que pour $\mathcal{G}_{1}$, il est "simple de voir que (9) est satisfaite pour tous les $i^{\prime}$ et $l^{\prime}$ (par exemple, $\Delta_{5}^{(57)}$ non explicitement montré), indiquant ainsi que l'arête $e_{45}$ est critique"[cite: 177].
+    * Cela signifie qu'aucune des conditions de non-criticalité du Lemme 1 n'est remplie. Il n'y a pas de nœud $j$ équidistant de 4 et 5 (donc $\Delta_{4,j}^{(45)} \ne 0$ est vrai pour tous les $j$), et il n'y a pas de voisins $i', l'$ qui permettent la convergence de chemins alternatifs (donc $\{\Delta_{4,j}^{(4i^{\prime})}, \Delta_{5,j}^{(5l^{\prime})}\} \ne \{1,1\}$ est vrai pour tous les $j, i', l'$).
+
+En résumé, pour recréer l'algorithme, il faut simuler le comportement distribué des nœuds, en s'assurant que chaque nœud effectue ses calculs basés uniquement sur les informations locales et les informations propagées par ses voisins, conformément aux lois de mise à jour et aux hypothèses de temps fini. L'étape cruciale est le calcul et l'analyse des mesures $\Delta$ pour chaque arête potentielle, en se basant sur les distances les plus courtes apprises distribuées.

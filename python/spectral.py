@@ -23,6 +23,7 @@ class GraphNetworkVisualizer:
         self.dist_threshold = dist_threshold
         self.parent = parent
         
+        self.max_distance = 8  
         self.selected_graph = None
         self.graph_positions = {}
         self.graph_textures = {}
@@ -171,18 +172,21 @@ class GraphNetworkVisualizer:
         # Get connected graphs
         connected = self.get_connected_graphs(self.selected_graph)
 
-        max_distance = 8
-
         # Get distance dict 
-        distance_dict = self.get_all_graph_at_distance_map(self.selected_graph, max_distance)
+        distance_dict = self.get_all_graph_at_distance_map(self.selected_graph, self.max_distance)
 
         
         # Since we can't change tint_color of draw_image, we'll redraw with different opacity
         # Clear the canvas and redraw everything
         dpg.delete_item("canvas")
         
+
         with dpg.drawlist(width=self.canvas_width, height=self.canvas_height, 
                          tag="canvas", parent=self.parent):
+
+            # Draw connections
+            self.draw_connections(connected)
+            
             # Redraw all graph images with appropriate opacity
             for shape_key, pos in self.graph_positions.items():
                 x, y = pos
@@ -199,9 +203,9 @@ class GraphNetworkVisualizer:
 
                     opacity = 0.96
 
-                    for i in range(1, max_distance + 1):
+                    for i in range(1, self.max_distance + 1):
                         if shape_key in distance_dict[i]:
-                            opacity = 0.96 - (i - 1) * 1/max_distance
+                            opacity = (i - 1) * 1/self.max_distance
                             break
 
 
@@ -227,8 +231,6 @@ class GraphNetworkVisualizer:
                     size=12
                 )
         
-        # Draw connections
-        # self.draw_connections(connected)
     
     def reset_graph_opacity(self):
         """Reset all graphs to full opacity"""
@@ -248,14 +250,14 @@ class GraphNetworkVisualizer:
                     tag=f"image_{shape_key}"
                 )
                 
-                # Add score text
-                score = self.shapes_dict[shape_key]['score']
-                dpg.draw_text(
-                    (x, y + self.image_size + 5), 
-                    f"{score:.2f}", 
-                    color=(0, 0, 0, 255), 
-                    size=12
-                )
+                # # Add score text
+                # score = self.shapes_dict[shape_key]['score']
+                # dpg.draw_text(
+                #     (x, y + self.image_size + 5), 
+                #     f"{score:.2f}", 
+                #     color=(0, 0, 0, 255), 
+                #     size=12
+                # )
     
     def draw_connections(self, connected_graphs: Set[str]):
         """Draw curved connections between selected graph and connected ones"""
@@ -264,7 +266,19 @@ class GraphNetworkVisualizer:
             
         selected_pos = self.graph_positions[self.selected_graph]
         
+
         with dpg.draw_layer(tag="connections_layer", parent="canvas"):
+
+            
+            dpg.draw_rectangle(
+                            selected_pos, 
+                            (selected_pos[0] + self.image_size, selected_pos[1] + self.image_size),
+                            color=(50, 255, 50, 200),
+                            thickness=8,
+                            fill=(0, 0, 0, 0),
+                            tag=f"connection_{self.selected_graph}_main"
+                        )
+
             for connected_key in connected_graphs:
                 if connected_key in self.graph_positions:
                     connected_pos = self.graph_positions[connected_key]
@@ -288,15 +302,26 @@ class GraphNetworkVisualizer:
                         ctrl1_x, ctrl1_y = start_x, start_y + control_offset
                         ctrl2_x, ctrl2_y = end_x, end_y - control_offset
                     
-                    line_id = dpg.draw_bezier_cubic(
-                        (start_x + 50, start_y + 50),  # Center of image
-                        (ctrl1_x + 50, ctrl1_y + 50),
-                        (ctrl2_x + 50, ctrl2_y + 50),
-                        (end_x + 50, end_y + 50),
+                    # line_id = dpg.draw_bezier_cubic(
+                    #     (start_x + 50, start_y + 50),  # Center of image
+                    #     (ctrl1_x + 50, ctrl1_y + 50),
+                    #     (ctrl2_x + 50, ctrl2_y + 50),
+                    #     (end_x + 50, end_y + 50),
+                    #     color=(255, 100, 100, 200),
+                    #     thickness=3
+                    # )
+                    # self.connection_lines.append(line_id)
+
+                    image_size = self.image_size
+                    square = dpg.draw_rectangle(
+                        (end_x, end_y), 
+                        (end_x + image_size, end_y + image_size),
                         color=(255, 100, 100, 200),
-                        thickness=3
+                        thickness=8,
+                        fill=(0, 0, 0, 0),
+                        tag=f"connection_{self.selected_graph}_{connected_key}"
                     )
-                    self.connection_lines.append(line_id)
+
     
     def on_mouse_click(self, sender, app_data):
         """Handle mouse clicks on the canvas"""
@@ -375,13 +400,14 @@ class GraphNetworkVisualizer:
 
 # Usage example:
 def spectral_decomposition(shapes_dict, transition_history, get_image_func, 
-                           targets, dist_threshold, parent, num_layers=12, image_size=60, layer_spacing=200, vertical_spacing=120, skin="default"):
+                           targets, dist_threshold, parent, num_layers=12, image_size=60, layer_spacing=200, vertical_spacing=120, skin="default", max_distance=8):
     """
     Create the graph network visualizer in the given parent window.
     """
     visualizer = GraphNetworkVisualizer(
         shapes_dict, transition_history, get_image_func, targets, dist_threshold, parent
     )
+    visualizer.max_distance = max_distance
     visualizer.create_interface(num_layers, image_size, layer_spacing, vertical_spacing, skin)
     return visualizer  # Optionnel, si tu veux manipuler l'objet ensuite
 
@@ -478,5 +504,6 @@ if __name__ == "__main__":
         image_size=100,
         layer_spacing=120,
         vertical_spacing=120,
-        skin="stick_dark"
+        skin="stick_dark",
+        max_distance=8
     )

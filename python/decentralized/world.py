@@ -49,7 +49,9 @@ class World:
             for i, (drone_pos, target_pos) in enumerate(zip(drones_list, targets_list)):
                 if drone_pos is not None:
                     try:
-                        drone = Drone(position=np.array(drone_pos), target=None, 
+                        drone = Drone(
+                            drone_id=len(self.drones),
+                            position=np.array(drone_pos), target=None, 
                                     scan_for_drones_method=self.get_drones_in_range, 
                                     scan_for_targets_method=self.get_targets_in_range)
                         if target_pos is not None:
@@ -63,7 +65,6 @@ class World:
         self.global_time: float = 0.0
         self.delta_time: float = 0.08  # Time step for updates, can be adjusted as needed
 
-
     def draw(self, draw_list):
         for drone in self.drones:
             drone.draw(draw_list)
@@ -71,30 +72,21 @@ class World:
             target.draw(draw_list)
 
     def update(self):
+
+        all_messages = []
+        for drone in self.drones.values():
+            messages = drone.get_messages_to_send()
+            all_messages.extend(messages)
+            
+        # Distribuer les messages
+        for msg in all_messages:
+            if msg.receiver_id in self.drones:
+                self.drones[msg.receiver_id].receive_message(msg)
+                
         for target in self.targets:
             target.update(self.delta_time)
         for drone in self.drones:
             drone.update(self.delta_time)
-        
-        # Exécuter l'algorithme xi-omega distribué
-        # self.xi_omega_step()
-    
-    def xi_omega_step(self):
-        """Exécute une étape de l'algorithme xi-omega distribué pour tous les drones"""
-        # Phase 1: Tous les drones préparent leurs messages
-        all_messages = {}
-        for drone in self.drones:
-            messages = drone.prepare_messages()
-            all_messages[drone] = messages
-        
-        # Phase 2: Distribuer les messages
-        for sender, messages in all_messages.items():
-            for receiver, message in messages.items():
-                receiver.receive_message(sender, message)
-        
-        # Phase 3: Tous les drones mettent à jour leur état
-        for drone in self.drones:
-            drone.update_xi_omega()
 
     def add_drone(self, drone:Drone):
         self.drones.append(drone)
@@ -108,7 +100,7 @@ class World:
             drone = self.drones.pop(idx)
             # Supprimer les références au drone dans les connexions des autres drones
             drone.destroy()  # Nettoyage local
-            self._cleanup_drone_references(drone)  # Nettoyage global
+            # self._cleanup_drone_references(drone)  # Nettoyage global supprimé pour décentralisation
         else:
             print(f"Error: Invalid drone index {idx}. Valid range: 0-{len(self.drones)-1}")
 

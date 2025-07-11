@@ -167,10 +167,10 @@ def get_mini_graph_image(nodes, targets, dist_threshold,
         )
     if age is not None:
         ax.text(
-            (ax.get_xlim()[0] + ax.get_xlim()[1]) / 2, ax.get_ylim()[0] * 2.5, f"{age}",
+            ax.get_xlim()[0], ax.get_ylim()[0], f"{age}",
             fontsize=size*4,
             zorder=node_zorder+1,
-            ha='center',
+            ha='left',
             va='bottom',
             transform=ax.transData,
             color=text_color,

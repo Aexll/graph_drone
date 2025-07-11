@@ -20,6 +20,7 @@ class GraphMaker:
         self.spectral_decomposition_n_shapes = 10
         self.spectral_decomposition_num_layers = 5
         self.spectral_decomposition_skin = "default"
+        self.spectral_decomposition_max_distance = 8
         # Genetic Optimisation
         self.opti_gen_stepsize = 0.1
         self.opti_gen_steps = 100000
@@ -359,7 +360,8 @@ class GraphMaker:
             image_size=100, 
             layer_spacing=120, 
             vertical_spacing=120, 
-            skin=self.spectral_decomposition_skin
+            skin=self.spectral_decomposition_skin,
+            max_distance=self.spectral_decomposition_max_distance
         )
 
         if not dpg.is_item_shown("spectral_window"):
@@ -377,6 +379,9 @@ class GraphMaker:
     def set_spectral_decomposition_skin(self, sender, app_data):
         self.spectral_decomposition_skin = app_data
 
+    def set_spectral_decomposition_max_distance(self, sender, app_data):
+        self.spectral_decomposition_max_distance = app_data
+        # print("Max distance set to:", self.spectral_decomposition_max_distance)
 
     # Run
 
@@ -412,6 +417,7 @@ class GraphMaker:
             dpg.add_text("Spectral Decomposition")
             dpg.add_input_int(label="Number of Shapes", default_value=self.spectral_decomposition_n_shapes, callback=self.set_spectral_decomposition_n_shapes)
             dpg.add_input_int(label="Number of Layers", default_value=self.spectral_decomposition_num_layers, callback=self.set_spectral_decomposition_num_layers)
+            dpg.add_input_int(label="Max Distance", default_value=self.spectral_decomposition_max_distance, callback=self.set_spectral_decomposition_max_distance)
             dpg.add_combo(items=SKINS, default_value=self.spectral_decomposition_skin, label="Skin", callback=self.set_spectral_decomposition_skin)
             dpg.add_button(label="Spectral Decomposition", callback=self.spectral_decomposition_callback)
             dpg.add_separator()
@@ -520,7 +526,8 @@ class GraphMaker:
                 image_size=100, 
                 layer_spacing=120, 
                 vertical_spacing=120, 
-                skin=self.spectral_decomposition_skin
+                skin=self.spectral_decomposition_skin,
+                max_distance=self.spectral_decomposition_max_distance
             )
 
         if not dpg.is_item_shown("spectral_window"):

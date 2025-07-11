@@ -2,49 +2,27 @@ import numpy as np
 import dearpygui.dearpygui as dpg
 from target import Target
 import copy
-import time
+# import time
 from collections import defaultdict
 from typing import Dict, List, Tuple, Set, Optional
+from message import Message, MessageType
 
 
 class Drone:
-    def __init__(self, position:np.ndarray, target:Target|None, scan_for_drones_method=None, scan_for_targets_method=None):
-        
+    def __init__(self, drone_id, position:np.ndarray, target:Target|None, scan_for_drones_method=None, scan_for_targets_method=None):
+
+        self.id = drone_id
         self.position:np.ndarray = position.astype(np.float32)
         self.target:Target|None = target
         
-        self.drone_radius:float = 10.0  # Radius of the drone for drawing purposes
-
         self.speed:float = 5.0
         self.range:float = 200.0
-
-        # Drone memory 
-        self.local_time:float = 0.0
-
-
-        self.connections: list['Drone'] = []  # List of connected drones
-
-        # Variables locales pour l'algorithme xi-omega (inspired by example 3)
-        self.xi = defaultdict(float)  # xi[drone] = valeur de connectivité vers drone
-        self.omega = defaultdict(lambda: float('inf'))  # omega[drone] = distance vers drone
         
-        # Initialisation : le drone se connaît lui-même
-        self.xi[self] = 1.0
-        self.omega[self] = 0.0
+        # visual
+        self.drone_radius:float = 10.0  # Radius of the drone for drawing purposes
+        self.target_radius = 10
+        self.connection_radius = 10
         
-        # Messages à envoyer et reçus
-        self.outgoing_messages = {}
-        self.incoming_messages = {}
-        
-        # Historique pour détecter la convergence
-        self.previous_xi = {}
-        self.previous_omega = {}
-        
-        # Métadonnées
-        self.iteration = 0
-        self.converged = False
-        self.known_drones = {self}  # Ensemble des drones découverts
-
         # world query methods
         self.scan_for_drones: callable = scan_for_drones_method 
         self.scan_for_targets: callable = scan_for_targets_method
@@ -56,16 +34,40 @@ class Drone:
             print("Warning: No scan_for_targets method provided, targets will not be found.")
             self.scan_for_targets = lambda position, range: []  # Default to empty list if not provided
 
-        # visual
-        self.drone_radius = 10
-        self.target_radius = 10
-        self.connection_radius = 10
-
         # Debug
         self.total_operations:int = 0 # Number of operations performed by this drone, for debugging purposes
         self.frame_operations:int = 0 # Number of operations performed in the current frame, for debugging purposes
         self.frame_count:int = 0 # Number of frames since the last reset, for debugging purposes
+
         
+        # Awareness and connections
+
+        self.neighbors: Set[int] = set()
+        
+        self.n_estimate = 1
+        
+        self.xi: Dict[int, int] = {self.id: 1}  
+        self.omega: Dict[int, float] = {self.id: 0.0}  
+
+        self.neighbors_omega: Dict[int, Dict[int, float]] = {}
+
+        self.critical_edges: Set[Tuple[int, int]] = set()
+        
+        # Messages à envoyer et reçus
+        self.outgoing_messages: List[Message] = []
+        self.incoming_messages: List[Message] = []
+        
+        # Compteur d'itérations pour les algorithmes
+        self.iteration = 0
+        self.critical_detection_iteration = 0
+        self.algorithm_phase = "neighbor_structure"  # neighbor_structure, connectivity, critical_detection
+        
+        # État de l'interface utilisateur
+        self.is_hovered = False
+        self.is_selected = False
+
+
+
 
     def draw(self, draw_list):
 
@@ -125,30 +127,20 @@ class Drone:
         self.local_time += delta_time
 
         # # Execute one step of the xi-omega algorithm
-        self.xi_omega_step()
+        self.step()
 
-        # Connection management
-        unknown_drones = self.scan_for_unknown_drones()
-        for drone in unknown_drones:
-            if self.can_connect(drone):
-                self.add_connection(drone)
-                break
+        # # Connection management
+        # unknown_drones = self.scan_for_unknown_drones()
+        # for drone in unknown_drones:
+        #     if self.can_connect(drone):
+        #         self.add_connection(drone)
+        #         break
 
-        # Movement
-        if self.target is not None:
-            self.move_towards_target(delta_time)
+        # # Movement
+        # if self.target is not None:
+        #     self.move_towards_target(delta_time)
 
-        # Debugging 
-        if True:
-            if self.frame_operations > 1000:
-                print(f"Drone at {self.position} performed {self.frame_operations} operations in this frame, Average: {self.total_operations / self.frame_count if self.frame_count > 0 else 0}.")
-            self.total_operations += self.frame_operations
-            self.frame_count += 1
-            self.frame_operations = 0  # Reset frame operations for the next frame
-
-
-
-    # behaviors 
+    # behaviors
 
     def clamp_position_to_unbreak_connections(self,position: np.ndarray):
         """Clamp the position to ensure it does not break any connection ranges."""
@@ -178,17 +170,17 @@ class Drone:
 
     # connection management
 
-    def can_connect(self, drone: 'Drone') -> bool:
+    def can_connect(self, drone: int) -> bool:
         """
         Check if this drone can add a connection to another drone.
         Returns True if the connection can be added, False otherwise.
 
         """
-        if drone in self.connections:
+        if drone in self.neighbors:
             return False
         
         # at most 3 connections
-        if len(self.connections) >= 3:
+        if len(self.neighbors) >= 3:
             return False
         
         # must be in range
@@ -197,34 +189,48 @@ class Drone:
 
         return True
 
-    def can_deconnect(self, drone: 'Drone') -> bool:
+    def can_deconnect(self, drone: int) -> bool:
         """
         Check if this drone can remove a connection to another drone.
         Not depending on the other drone's state.
         """
-        if drone not in self.connections:
+        if drone not in self.neighbors:
             return False
         
         # must not be the only connection
-        if len(self.connections) <= 1:
+        if len(self.neighbors) <= 1:
             return False
         
         return True
 
-    def add_connection(self, drone: 'Drone'):
+    def add_connection(self, drone_id: int):
         """ Add a connection to another drone. must be in range """
         # Ajouter la connexion avant de calculer xi pour éviter les incohérences
-        if drone not in self.connections:
-            self.connections.append(drone)
-        if self not in drone.connections:
-            drone.connections.append(self)
+        if drone_id not in self.neighbors:
+            self.neighbors.add(drone_id)
         
+        conect_msg = Message(
+            sender_id=self.id,
+            receiver_id=drone_id,
+            msg_type=MessageType.CONNECTION_ADD,
+            data={
+                "position": self.position.tolist(),
+                "sender_id": self.id
+            }
+        )
+
+        # Envoyer le message de connexion
+        self.outgoing_messages.append(conect_msg)
+
+        self.reset_algorithms()
+
     def remove_connection(self, drone: 'Drone'):
         """Remove a connection to another drone."""
-        if drone in self.connections:
-            self.connections.remove(drone)
-        if self in drone.connections:
-            drone.connections.remove(self)
+        if drone in self.neighbors:
+            self.neighbors.remove(drone)
+        if self in drone.neighbors:
+            drone.neighbors.remove(self)
+        self.reset_algorithms()
 
     def scan_for_new_connections(self, nb_connections=1) -> list['Drone']:
         """
@@ -251,278 +257,327 @@ class Drone:
 
         return unknown_drones
 
-    def destroy(self):
-        """Clean up the drone's resources."""
-        for connection in self.connections:
-            connection.remove_connection(self)
-        self.connections.clear()
-        self.known_drones.clear()
-        self.incoming_messages.clear()
 
-    # Xi-Omega Algorithm Implementation (based on examples 3 and 4)
+    def reset_algorithms(self):
+        """Réinitialiser les algorithmes distribués selon les spécifications du papier"""
+        # Conditions initiales selon le papier (k=0)
+        self.xi = {self.id: 1}  # ξ[i,j](0) = 1 si j=i, 0 sinon
+        self.omega = {self.id: 0}  # ω[i,j](0) = 0 si j=i, ∞ sinon
+        
+        # Initialiser tous les autres nœuds connus à 0 et ∞
+        all_known_nodes = {self.id} | self.neighbors
+        for node_id in all_known_nodes:
+            if node_id != self.id:
+                self.xi[node_id] = 0
+                self.omega[node_id] = float('inf')
+        
+        self.neighbors_omega.clear()
+        self.critical_edges.clear()
+        self.iteration = 0
+        self.critical_detection_iteration = 0
+        self.algorithm_phase = "neighbor_structure"
+        
+        # Estimation du nombre de nœuds basée sur l'index le plus élevé connu
+        self.estimate_node_count()
+        
+    def estimate_node_count(self):
+        """Estimation du nombre de noeuds selon les hypothèses du papier"""
+        # Selon le papier, chaque noeud connaît le nombre total de noeuds n
+        # En pratique, on peut estimer en se basant sur les noeuds découverts
+        known_nodes = {self.id} | self.neighbors | set(self.xi.keys()) | set(self.omega.keys())
 
-    def xi_omega_step(self):
-        """Execute one step of the distributed xi-omega algorithm"""
-        # Phase 1: Prepare messages
-        messages = self.prepare_messages()
-        
-        # Phase 2: Send messages to neighbors (simulated)
-        for neighbor, message in messages.items():
-            neighbor.receive_message(self, message)
-        
-        # Phase 3: Update xi and omega values
-        self.update_xi_omega()
-        
-        # Debug: print current state
-        # print(f"Drone {id(self)} step {self.iteration}: knows {len(self.known_drones)} drones")
+        # Exclure les noeuds avec des valeurs infinies (non atteignables)
+        reachable_nodes = {node for node in known_nodes
+                          if self.omega.get(node, float('inf')) != float('inf') or node == self.id}
 
-    def prepare_messages(self) -> Dict['Drone', Dict]:
-        """
-        Prépare les messages à envoyer aux voisins
-        
-        Returns:
-            Dictionnaire {neighbor_drone: message}
-        """
-        messages = {}
-        
-        # Créer un message contenant l'état xi et omega du drone
-        # Utiliser les IDs au lieu des objets pour éviter la récursion infinie
-        xi_serializable = {id(drone): value for drone, value in self.xi.items()}
-        omega_serializable = {id(drone): value for drone, value in self.omega.items()}
-        known_drones_ids = {id(drone) for drone in self.known_drones}
-        
-        message = {
-            'sender_id': id(self),
-            'iteration': self.iteration,
-            'xi': xi_serializable,
-            'omega': omega_serializable,
-            'known_drones_ids': known_drones_ids,
-            'timestamp': time.time()
-        }
-        
-        # Envoyer le même message à tous les voisins
-        for neighbor in self.connections:
-            messages[neighbor] = message.copy()  # Copie simple au lieu de deepcopy
-        
-        return messages
-
-    def receive_message(self, sender: 'Drone', message: Dict):
-        """
-        Reçoit un message d'un voisin
-        
-        Args:
-            sender: Drone expéditeur
-            message: Contenu du message
-        """
-        if sender not in self.incoming_messages:
-            self.incoming_messages[sender] = []
-        
-        self.incoming_messages[sender].append(message)
-
-    def update_xi_omega(self):
-        """
-        Met à jour les valeurs xi et omega selon l'algorithme distribué
-        Implémentation corrigée basée sur exemple_3.py
-        """
-        # Sauvegarder l'état précédent
-        self.previous_xi = dict(self.xi)
-        self.previous_omega = dict(self.omega)
-        
-        # Découvrir de nouveaux drones à partir des messages
-        all_known_drones = set(self.known_drones)
-        
-        # Ajouter directement les expéditeurs des messages comme nouveaux drones connus
-        for sender in self.incoming_messages.keys():
-            all_known_drones.add(sender)
-        
-        # Créer un mapping ID->drone pour les drones que nous connaissons déjà
-        drone_id_to_object = {id(drone): drone for drone in all_known_drones}
-        
-        # Découvrir d'autres drones mentionnés dans les messages
-        for sender, messages in self.incoming_messages.items():
-            if messages:  # Prendre le message le plus récent
-                latest_message = messages[-1]
-                known_drone_ids = latest_message.get('known_drones_ids', set())
-                
-                # Découvrir de nouveaux drones via les IDs dans les messages
-                # Ici, on doit demander au monde ou au système de résoudre les IDs
-                # Pour l'instant, on va faire une approche simplifiée :
-                # Chercher dans tous les drones connectés si on peut résoudre ces IDs
-                
-                # Méthode de découverte étendue via les connexions
-                for connected_drone in self.connections:
-                    if connected_drone in self.incoming_messages:
-                        for other_drone in connected_drone.known_drones:
-                            if other_drone not in all_known_drones:
-                                all_known_drones.add(other_drone)
-                                drone_id_to_object[id(other_drone)] = other_drone
-        
-        self.known_drones = all_known_drones
-        
-        # Étape 1: Calculer xi pour tous les drones connus
-        new_xi = defaultdict(float)
-        new_omega = defaultdict(lambda: float('inf'))
-        
-        # Initialiser avec les valeurs actuelles
-        for drone in self.known_drones:
-            new_xi[drone] = self.xi.get(drone, 0.0)
-            new_omega[drone] = self.omega.get(drone, float('inf'))
-        
-        # Assurer que self reste à 1.0 et 0.0
-        new_xi[self] = 1.0
-        new_omega[self] = 0.0
-        
-        # Pour chaque drone target
-        for target_drone in self.known_drones:
-            if target_drone == self:
-                continue
-                
-            target_id = id(target_drone)
-            
-            # Équation (1): xi_i,j(k+1) = max{xi_l,j(k) : l ∈ N_i ∪ {i}}
-            candidates = [self.xi.get(target_drone, 0.0)]  # xi_i,j(k)
-            
-            # Ajouter les valeurs des voisins
-            for neighbor in self.connections:
-                if neighbor in self.incoming_messages:
-                    messages = self.incoming_messages[neighbor]
-                    if messages:
-                        latest_message = messages[-1]
-                        neighbor_xi = latest_message.get('xi', {})
-                        if target_id in neighbor_xi:
-                            candidates.append(neighbor_xi[target_id])
-            
-            # Si le target est un voisin direct, ajouter sa connectivité
-            if target_drone in self.connections:
-                candidates.append(1.0)
-            
-            new_xi[target_drone] = max(candidates)
-        
-        # Étape 2: Calculer omega pour tous les drones connus
-        for target_drone in self.known_drones:
-            if target_drone == self:
-                continue
-                
-            target_id = id(target_drone)
-            
-            # Si xi a changé, recalculer omega
-            if new_xi[target_drone] != self.xi.get(target_drone, 0.0):
-                # Équation (2): Si xi augmente, omega = min{omega_l,j(k) + 1 : l ∈ N_i, xi_l,j(k) = xi_i,j(k+1)}
-                min_distances = []
-                
-                # Si le target est un voisin direct et xi=1, alors omega=1
-                if target_drone in self.connections and new_xi[target_drone] == 1.0:
-                    min_distances.append(1.0)
-                
-                # Chercher parmi les voisins
-                for neighbor in self.connections:
-                    if neighbor in self.incoming_messages:
-                        messages = self.incoming_messages[neighbor]
-                        if messages:
-                            latest_message = messages[-1]
-                            neighbor_xi = latest_message.get('xi', {})
-                            neighbor_omega = latest_message.get('omega', {})
-                            
-                            # Si le voisin a la même valeur xi que celle qu'on vient de calculer
-                            if (target_id in neighbor_xi and 
-                                abs(neighbor_xi[target_id] - new_xi[target_drone]) < 1e-10):
-                                if (target_id in neighbor_omega and 
-                                    neighbor_omega[target_id] != float('inf')):
-                                    min_distances.append(neighbor_omega[target_id] + 1)
-                
-                if min_distances:
-                    new_omega[target_drone] = min(min_distances)
-                else:
-                    new_omega[target_drone] = float('inf')
-            else:
-                # xi n'a pas changé, garder omega
-                new_omega[target_drone] = self.omega.get(target_drone, float('inf'))
-        
-        # Mettre à jour les valeurs
-        self.xi = new_xi
-        self.omega = new_omega
-        
-        # Nettoyer les messages traités
-        self.incoming_messages.clear()
-        self.iteration += 1
-
-    def has_converged(self, tolerance: float = 1e-10) -> bool:
-        """
-        Vérifie si le drone a convergé (pas de changement dans xi et omega)
-        
-        Args:
-            tolerance: Tolérance pour la convergence
-            
-        Returns:
-            True si convergé, False sinon
-        """
-        if not self.previous_xi or not self.previous_omega:
-            return False
-        
-        # Vérifier si tous les drones connus ont des valeurs stables
-        for drone in self.known_drones:
-            if drone == self:
-                continue
-            
-            # Vérifier xi
-            prev_xi = self.previous_xi.get(drone, 0)
-            curr_xi = self.xi.get(drone, 0)
-            if abs(curr_xi - prev_xi) > tolerance:
-                return False
-            
-            # Vérifier omega
-            prev_omega = self.previous_omega.get(drone, float('inf'))
-            curr_omega = self.omega.get(drone, float('inf'))
-            if abs(curr_omega - prev_omega) > tolerance:
-                return False
-        
-        return True
-
-    def get_neighbor_structure(self) -> Dict[int, List['Drone']]:
-        """
-        Retourne la structure de voisinage locale
-        
-        Returns:
-            Dictionnaire {distance: [liste_des_drones]}
-        """
-        structure = defaultdict(list)
-        
-        for drone in self.known_drones:
-            if drone != self:
-                distance = self.omega.get(drone, float('inf'))
-                if distance != float('inf'):
-                    structure[int(distance)].append(drone)
-        
-        return dict(structure)
-
-    def print_local_state(self):
-        """Affiche l'état local du drone"""
-        print(f"\n--- État du drone {id(self)} ---")
-        print(f"Position: {self.position}")
-        print(f"Voisins: {[id(d) for d in self.connections]}")
-        print(f"Drones connus: {[id(d) for d in self.known_drones]}")
-        print(f"Itération: {self.iteration}")
-        
-        xi_display = {id(drone): value for drone, value in self.xi.items()}
-        print(f"Xi: {xi_display}")
-        
-        omega_display = {}
-        for drone, dist in self.omega.items():
-            omega_display[id(drone)] = dist if dist != float('inf') else 'inf'
-        print(f"Omega: {omega_display}")
-        
-        print(f"Structure de voisinage: {self.get_neighbor_structure()}")
-        print(f"Convergé: {self.has_converged()}")
-
-    def get_display_color(self) -> List[int]:
-        """Retourne la couleur d'affichage du drone (inspiré de l'exemple 4)"""
-        if self.has_converged():
-            return [100, 255, 100]  # Vert si convergé
-        elif len(self.incoming_messages) > 0:
-            return [255, 100, 100]  # Rouge si actif (traite des messages)
+        # Estimation conservative basée sur l'index le plus élevé trouvé
+        if known_nodes:
+            max_id = max(known_nodes)
+            self.n_estimate = max(max_id + 1, len(reachable_nodes), self.n_estimate)
         else:
-            return [100, 150, 255]  # Bleu par défaut
-   
+            self.n_estimate = max(1, self.n_estimate)
+        
+    def update_neighbor_structure(self):
+        """Algorithme 1: Mise à jour de la structure voisine (xi et omega)"""
+        if self.iteration >= self.n_estimate:
+            # Transition vers l'algorithme 2 après n étapes
+            self.algorithm_phase = "connectivity"
+            return
+            
+        # Créer les messages pour les voisins avec les valeurs actuelles
+        for neighbor_id in self.neighbors:
+            msg_data = {
+                "xi": copy.deepcopy(self.xi),
+                "omega": copy.deepcopy(self.omega),
+                "iteration": self.iteration,
+                "sender_id": self.id
+            }
+            msg = Message(
+                sender_id=self.id,
+                receiver_id=neighbor_id,
+                msg_type=MessageType.XI_UPDATE,
+                data=msg_data
+            )
+            self.outgoing_messages.append(msg)
+            
+    def process_xi_update(self, msg: Message):
+        """Traiter les mises à jour xi/omega des voisins selon l'algorithme du papier"""
+        sender_xi = msg.data["xi"]
+        sender_omega = msg.data["omega"]
+        sender_id = msg.sender_id
+        
+        # Stocker les valeurs omega du voisin pour l'algorithme 3
+        self.neighbors_omega[sender_id] = copy.deepcopy(sender_omega)
+        
+        # Appliquer les lois de mise à jour du papier (Algorithme 1)
+        old_xi = copy.deepcopy(self.xi)
+
+        # Pour tous les noeuds connus (inclure les nouveaux noeuds découverts)
+        all_nodes = set(sender_xi.keys()) | set(self.xi.keys())
+        
+        for j in all_nodes:
+            if j == self.id:
+                continue
+                
+            # ξ[i,j](k+1) = max(ξ[l,j](k)) pour l ∈ N_i ∪ {i}
+            # Prendre le max entre notre estimation actuelle et celle du voisin
+            current_xi = self.xi.get(j, 0)
+            sender_xi_val = sender_xi.get(j, 0)
+            new_xi = max(current_xi, sender_xi_val)
+            
+            # Mettre à jour xi
+            old_xi_val = old_xi.get(j, 0)
+            self.xi[j] = new_xi
+            
+            # ω[i,j](k+1) selon les conditions du papier
+            if new_xi > old_xi_val:
+                # xi a été mis à jour (nouvelle connectivité découverte), recalculer omega
+                # ω[i,j](k+1) = min_{l ∈ N_i}(ω[l,j](k) + 1)
+                min_omega = float('inf')
+                for neighbor_id in self.neighbors:
+                    if neighbor_id in self.neighbors_omega:
+                        neighbor_omega = self.neighbors_omega[neighbor_id]
+                        neighbor_dist = neighbor_omega.get(j, float('inf'))
+                        if neighbor_dist != float('inf'):
+                            min_omega = min(min_omega, neighbor_dist + 1)
+
+                if min_omega != float('inf'):
+                    self.omega[j] = min(self.omega.get(j, float('inf')), min_omega)
+            # Si xi n'a pas changé, omega reste inchangé
+
+        # Mettre à jour l'estimation du nombre de noeuds
+        self.estimate_node_count()
+        
+    def process_omega_update(self, msg: Message):
+        """Traiter les mises à jour omega des voisins pour l'algorithme 3"""
+        sender_omega = msg.data["omega"]
+        sender_id = msg.sender_id
+        
+        # Stocker les valeurs omega du voisin
+        self.neighbors_omega[sender_id] = copy.deepcopy(sender_omega)
+        
+    def check_connectivity_and_proceed(self):
+        """Algorithme 2: Vérifier la connectivité et passer à la détection d'arêtes critiques"""
+        if self.algorithm_phase == "connectivity":
+            # Vérifier si tous les nœuds sont atteignables (connectivité)
+            all_connected = True
+            for node_id in range(self.n_estimate):
+                # Un noeud est considéré comme non atteignable si xi[node_id] = 0
+                if node_id != self.id and self.xi.get(node_id, 0) == 0:
+                    all_connected = False
+                    break
+                    
+            # Transition vers l'algorithme 3 après 2n étapes ou si tout est connecté
+            if all_connected or self.iteration >= 2 * self.n_estimate:
+                self.algorithm_phase = "critical_detection"
+                # Réinitialiser le compteur d'itération pour l'algorithme 3
+                self.critical_detection_iteration = 0
+                
+    def detect_critical_edges(self):
+        """Algorithme 3: Détection des arêtes critiques selon le papier (2 étapes)"""
+        if self.algorithm_phase != "critical_detection":
+            return
+            
+        self.critical_edges.clear()
+        
+        # Étape 2n+1: Échanger les vecteurs omega avec tous les voisins
+        if self.critical_detection_iteration == 0:
+            for neighbor_id in self.neighbors:
+                msg_data = {
+                    "omega": copy.deepcopy(self.omega),
+                    "sender_id": self.id
+                }
+                msg = Message(
+                    sender_id=self.id,
+                    receiver_id=neighbor_id,
+                    msg_type=MessageType.OMEGA_UPDATE,
+                    data=msg_data
+                )
+                self.outgoing_messages.append(msg)
+                
+        # Étape 2n+2: Analyser les arêtes critiques
+        elif self.critical_detection_iteration >= 1:
+            # Vérifier qu'on a reçu les informations omega de tous nos voisins
+            if len(self.neighbors_omega) >= len(self.neighbors):
+                for l in self.neighbors:
+                    if self.is_critical_edge_theorem2(self.id, l):
+                        edge = tuple(sorted([self.id, l]))
+                        self.critical_edges.add(edge)
+                        
+        self.critical_detection_iteration += 1
+                
+    def is_critical_edge_theorem2(self, i: int, l: int) -> bool:
+        """
+        Vérifier si une arête est critique selon le Théorème 2 du papier
+        
+        Une arête e_il est critique ssi pour chaque nœud j et pour tous les voisins
+        i' de i et l' de l, la condition suivante est remplie:
+        Δ[i,j]^(il) ≠ 0 ET {Δ[i,j]^(ii'), Δ[l,j]^(ll')} ≠ {1,1}
+        
+        Ceci est la négation du Lemme 1 (conditions de non-criticité)
+        """
+        if l not in self.neighbors:
+            return False
+            
+        # Vérifier que nous avons les informations omega du voisin l
+        if l not in self.neighbors_omega:
+            return False
+            
+        omega_l = self.neighbors_omega[l]
+        
+        # Pour tous les nœuds j dans le réseau
+        all_nodes = set(self.omega.keys()) | set(omega_l.keys())
+        
+        for j in all_nodes:
+            if j == i or j == l:
+                continue
+                
+            # Calculer Δ[i,j]^(il) = ω[i,j](n) - ω[l,j](n)
+            omega_i_j = self.omega.get(j, float('inf'))
+            omega_l_j = omega_l.get(j, float('inf'))
+
+            # Ignorer les nœuds non atteignables
+            if omega_i_j == float('inf') or omega_l_j == float('inf'):
+                continue
+                
+            delta_i_j_il = omega_i_j - omega_l_j
+            
+            # Condition 1: Δ[i,j]^(il) ≠ 0
+            # Si Δ[i,j]^(il) = 0, alors j est équidistant de i et l (Lemme 1, condition 1)
+            # Cela indique un chemin alternatif, donc l'arête n'est PAS critique
+            if delta_i_j_il == 0:
+                return False
+                
+            # Condition 2: Vérifier qu'il n'existe pas de voisins i' et l' tels que
+            # {Δ[i,j]^(ii'), Δ[l,j]^(ll')} = {1,1}
+            # (c'est la condition 2 du Lemme 1 pour les chemins alternatifs)
+            
+            # Pour tous les voisins i' de i
+            for i_prime in self.neighbors:
+                if i_prime == l or i_prime not in self.neighbors_omega:
+                    continue
+                    
+                omega_i_prime = self.neighbors_omega[i_prime]
+                omega_i_prime_j = omega_i_prime.get(j, float('inf'))
+
+                if omega_i_prime_j == float('inf'):
+                    continue
+                    
+                # Calculer Δ[i,j]^(ii')
+                delta_i_j_ii_prime = omega_i_j - omega_i_prime_j
+                
+                # Maintenant on doit vérifier les voisins de l
+                # En environnement distribué, on approxime en utilisant nos voisins communs
+                # ou les informations disponibles sur l
+                for l_prime in self.neighbors:
+                    if l_prime == i or l_prime not in self.neighbors_omega:
+                        continue
+                        
+                    # Vérifier si l_prime pourrait être un voisin de l
+                    # Cette partie est une approximation car nous n'avons pas
+                    # directement accès à la liste des voisins de l
+                    omega_l_prime = self.neighbors_omega[l_prime]
+                    omega_l_prime_j = omega_l_prime.get(j, float('inf'))
+
+                    if omega_l_prime_j == float('inf'):
+                        continue
+                        
+                    # Calculer Δ[l,j]^(ll') en assumant que l_prime est voisin de l
+                    delta_l_j_ll_prime = omega_l_j - omega_l_prime_j
+                    
+                    # Si {Δ[i,j]^(ii'), Δ[l,j]^(ll')} = {1,1}, alors il existe
+                    # un chemin alternatif (Lemme 1, condition 2)
+                    if delta_i_j_ii_prime == 1 and delta_l_j_ll_prime == 1:
+                        return False
+                                        
+        # Si toutes les conditions sont satisfaites pour tous les j,
+        # l'arête est critique selon le Théorème 2
+        return True
+        
+    def step(self):
+        """Exécuter une étape de l'algorithme distribué"""
+        # Traiter les messages entrants
+        for msg in self.incoming_messages:
+            if msg.msg_type == MessageType.XI_UPDATE:
+                self.process_xi_update(msg)
+            elif msg.msg_type == MessageType.OMEGA_UPDATE:
+                self.process_omega_update(msg)
+            elif msg.msg_type == MessageType.CONNECTION_ADD:
+                # Ajouter une connexion à un nouveau drone
+                new_drone_id = msg.data["sender_id"]
+                if self.can_connect(new_drone_id):
+                    self.add_connection(new_drone_id)
+                
+        self.incoming_messages.clear()
+        
+        # Exécuter l'algorithme approprié selon la phase
+        if self.algorithm_phase == "neighbor_structure":
+            self.update_neighbor_structure()
+        elif self.algorithm_phase == "connectivity":
+            self.check_connectivity_and_proceed()
+        elif self.algorithm_phase == "critical_detection":
+            self.detect_critical_edges()
+            
+        self.iteration += 1
+        
+    def get_messages_to_send(self) -> List[Message]:
+        """Obtenir les messages à envoyer et vider la queue"""
+        messages = self.outgoing_messages.copy()
+        self.outgoing_messages.clear()
+        return messages
+        
+    def receive_message(self, msg: Message):
+        """Recevoir un message"""
+        self.incoming_messages.append(msg)
+        
+    def get_known_nodes(self) -> Set[int]:
+        """Obtenir tous les nœuds dont ce drone a connaissance"""
+        known_nodes = {self.id}
+        known_nodes.update(self.neighbors)
+        known_nodes.update(self.xi.keys())
+        known_nodes.update(self.omega.keys())
+        return known_nodes
+        
+    def get_detailed_info(self) -> dict:
+        """Obtenir les informations détaillées du drone"""
+        return {
+            'id': self.id,
+            'position': (self.x, self.y),
+            'neighbors': list(self.neighbors),
+            'phase': self.algorithm_phase,
+            'iteration': self.iteration,
+            'n_estimate': self.n_estimate,
+            'xi': dict(self.xi),
+            'omega': {k: v if v != float('inf') else '∞' for k, v in self.omega.items()},
+            'critical_edges': list(self.critical_edges),
+            'known_nodes': list(self.get_known_nodes())
+        }
+
+
+
+
+
+
 
 
 
